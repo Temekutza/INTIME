@@ -10,6 +10,22 @@ class Settings(BaseSettings):
     postgres_db: str = "aivritm"
     postgres_host: str = "db"
     postgres_port: int = 5432
+    session_ttl_days: int = 14
+    session_cookie_secure: bool = False
+
+    llm_api_key: str | None = None
+    llm_base_url: str = "https://api.openai.com/v1"
+    llm_model: str = "gpt-4o-mini"
+    llm_timeout: float = 30
+
+    stt_api_key: str | None = None
+    stt_base_url: str | None = None
+    stt_model: str = "whisper-1"
+
+    tts_api_key: str | None = None
+    tts_base_url: str | None = None
+    tts_model: str = "tts-1"
+    tts_voice: str = "alloy"
 
     @property
     def database_url(self) -> str:

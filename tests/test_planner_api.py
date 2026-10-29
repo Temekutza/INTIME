@@ -160,6 +160,68 @@ def test_items_catalog_and_owner(client: TestClient, accounts: Accounts) -> None
     assert client.get(f"/api/v1/items/{item_id}").status_code == 404
 
 
+def test_items_require_auth_and_schedule_rules(client: TestClient, accounts: Accounts) -> None:
+    assert client.get("/api/v1/items").status_code == 401
+    assert client.get("/api/v1/item-types").status_code == 401
+    assert client.post("/api/v1/items", json={"item_type": "task", "title": "Без входа"}).status_code == 401
+
+    short = client.post("/api/v1/auth/register", json={"login": "ab", "password": "short"})
+    assert short.status_code == 422
+    bad_zone = client.post(
+        "/api/v1/auth/register",
+        json={"login": "zoneuser", "password": "password1", "timezone": "Not/AZone"},
+    )
+    assert bad_zone.status_code == 422
+
+    accounts.register()
+    both_deadlines = client.post(
+        "/api/v1/items",
+        json={
+            "item_type": "task",
+            "title": "Два срока",
+            "due_on": "2026-10-30",
+            "due_at": "2026-10-30T12:00:00+03:00",
+        },
+    )
+    assert both_deadlines.status_code == 422
+
+    backwards = client.post(
+        "/api/v1/items",
+        json={
+            "item_type": "meeting",
+            "title": "Наоборот",
+            "start_at": "2026-10-30T12:00:00+03:00",
+            "end_at": "2026-10-30T11:00:00+03:00",
+        },
+    )
+    assert backwards.status_code == 422
+
+    reminder = client.post(
+        "/api/v1/items",
+        json={
+            "item_type": "reminder",
+            "title": "Позвонить",
+            "remind_at": "2026-10-30T09:00:00+03:00",
+        },
+    )
+    assert reminder.status_code == 201, reminder.text
+    assert reminder.json()["status"] == "pending"
+    reminder_id = reminder.json()["id"]
+
+    missing_time = client.post("/api/v1/items", json={"item_type": "reminder", "title": "Без времени"})
+    assert missing_time.status_code == 422
+
+    renamed = client.patch(f"/api/v1/items/{reminder_id}", json={"title": "Позвонить маме"})
+    assert renamed.status_code == 200
+    assert renamed.json()["title"] == "Позвонить маме"
+
+    by_status = client.get("/api/v1/items", params={"item_type": "reminder", "status": "pending"})
+    assert by_status.status_code == 200
+    assert by_status.json()["total"] == 1
+
+    assert client.get("/api/v1/items/999999999").status_code == 404
+
+
 def test_assistant_and_voice_need_configuration(client: TestClient, accounts: Accounts) -> None:
     assert client.post("/api/v1/assistant/messages", json={"text": "что у меня завтра"}).status_code == 401
     accounts.register()

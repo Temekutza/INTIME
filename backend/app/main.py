@@ -5,7 +5,14 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.errors import ApiError
 
-app = FastAPI(title=settings.app_name)
+app = FastAPI(
+    title=settings.app_name,
+    description="Планировщик задач, встреч и напоминаний.",
+    version="0.1.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+)
 app.include_router(api_router, prefix="/api/v1")
 
 

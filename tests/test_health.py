@@ -18,3 +18,39 @@ def test_unknown_path_returns_404(client) -> None:
     response = client.get("/api/v1/missing")
 
     assert response.status_code == 404
+
+
+def test_swagger_ui_is_served(client) -> None:
+    response = client.get("/docs")
+
+    assert response.status_code == 200
+    assert "Swagger UI" in response.text
+    assert "/openapi.json" in response.text
+
+
+def test_openapi_lists_planner_routes(client) -> None:
+    response = client.get("/openapi.json")
+
+    assert response.status_code == 200
+    paths = response.json()["paths"]
+    expected = {
+        "/api/v1/health",
+        "/api/v1/auth/register",
+        "/api/v1/auth/login",
+        "/api/v1/users/me",
+        "/api/v1/items",
+        "/api/v1/items/{item_id}",
+        "/api/v1/item-types",
+        "/api/v1/item-types/{type}/statuses",
+        "/api/v1/assistant/messages",
+        "/api/v1/voice/transcriptions",
+        "/api/v1/voice/speech",
+    }
+    missing = expected - set(paths)
+    assert not missing
+    assert "get" in paths["/api/v1/users/me"]
+    assert "patch" in paths["/api/v1/users/me"]
+    assert "post" in paths["/api/v1/items"]
+    assert "get" in paths["/api/v1/items"]
+    assert "patch" in paths["/api/v1/items/{item_id}"]
+    assert "delete" in paths["/api/v1/items/{item_id}"]

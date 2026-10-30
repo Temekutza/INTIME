@@ -29,20 +29,60 @@ class Item:
     due_on: date | None = None
     due_at: datetime | None = None
     remind_at: datetime | None = None
+    priority: str | None = None
+    color: str | None = None
+    completed_at: datetime | None = None
+    deleted_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class Message:
+    role: str
+    text: str
+    kind: str | None = "info"
+    request_id: str | None = None
+
+
+@dataclass(frozen=True)
+class Proposal:
+    request_id: str
+    action: str
+    payload: dict
+    status: str = "pending"
+    result_title: str | None = None
+
+
+@dataclass(frozen=True)
+class Conversation:
+    client_session_id: str
+    messages: tuple[Message, ...]
+    proposals: tuple[Proposal, ...] = ()
 
 
 @dataclass(frozen=True)
 class UserFixture:
     user: User
     items: tuple[Item, ...]
+    type_colors: tuple[tuple[str, str], ...] = ()
+    conversation: Conversation | None = None
 
 
 def build(now: datetime) -> tuple[UserFixture, ...]:
     if now.tzinfo is None:
         raise ValueError("now должен быть timezone-aware")
     return (
-        UserFixture(User("anna", "anna@example.com", "Europe/Moscow"), _anna(now)),
-        UserFixture(User("boris", "boris@example.com", "Asia/Yekaterinburg"), _boris(now)),
+        UserFixture(
+            User("anna", "anna@example.com", "Europe/Moscow"),
+            _anna(now),
+            type_colors=(("meeting", "#3d7a62"),),
+            conversation=_anna_chat(now),
+        ),
+        UserFixture(
+            User("boris", "boris@example.com", "Asia/Yekaterinburg"),
+            _boris(now),
+            type_colors=(("task", "#4f72d8"),),
+            conversation=_boris_chat(),
+        ),
         UserFixture(User("clara", None, "UTC"), _clara(now)),
     )
 
@@ -60,22 +100,31 @@ def _anna(now: datetime) -> tuple[Item, ...]:
     tz = "Europe/Moscow"
     today = _day(now, tz)
     return (
-        Item("task", "todo", "Купить молоко"),
+        Item("task", "todo", "Купить молоко", priority="medium"),
         Item(
             "task",
             "todo",
             "Сдать отчёт",
             description="Квартальный отчёт в бухгалтерию",
             due_on=today,
+            priority="urgent",
+            color="#be5766",
         ),
-        Item("task", "todo", "Оплатить интернет", due_on=_day(now, tz, -1)),
-        Item("task", "todo", "Записаться к врачу", due_on=_day(now, tz, 7)),
+        Item(
+            "task",
+            "todo",
+            "Оплатить интернет",
+            due_on=_day(now, tz, -1),
+            priority="important",
+        ),
+        Item("task", "todo", "Записаться к врачу", due_on=_day(now, tz, 7), priority="low"),
         Item(
             "task",
             "in_progress",
             "Позвонить клиенту",
             due_at=_at(today, 18, 0, tz),
             remind_at=_at(today, 17, 30, tz),
+            priority="urgent",
         ),
         Item(
             "task",
@@ -91,6 +140,7 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             "Разобрать почту",
             description="Входящие за неделю",
             due_on=_day(now, tz, -3),
+            completed_at=_at(_day(now, tz, -3), 18, 0, tz),
         ),
         Item(
             "task",
@@ -111,6 +161,15 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             "Налоги",
             due_at=_at(_day(now, tz, 30), 12, 0, tz),
             remind_at=_at(_day(now, tz, 29), 9, 0, tz),
+            priority="important",
+        ),
+        Item(
+            "task",
+            "todo",
+            "Старый черновик",
+            description="Мягко удалена, в списках не показывается",
+            due_on=_day(now, tz, -10),
+            deleted_at=_at(_day(now, tz, -2), 12, 0, tz),
         ),
         Item(
             "meeting",
@@ -127,6 +186,7 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             description="Показать прототип календаря",
             start_at=_at(today, 15, 0, tz),
             end_at=_at(today, 16, 0, tz),
+            color="#2255aa",
         ),
         Item(
             "meeting",
@@ -134,6 +194,7 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             "Планёрка",
             start_at=_at(_day(now, tz, -1), 11, 0, tz),
             end_at=_at(_day(now, tz, -1), 12, 0, tz),
+            completed_at=_at(_day(now, tz, -1), 12, 0, tz),
         ),
         Item(
             "meeting",
@@ -169,6 +230,7 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             description="Команда платформы",
             start_at=_at(_day(now, tz, -5), 16, 0, tz),
             end_at=_at(_day(now, tz, -5), 17, 0, tz),
+            completed_at=_at(_day(now, tz, -5), 17, 0, tz),
         ),
         Item(
             "reminder",
@@ -193,6 +255,7 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             "done",
             "Оплатить парковку",
             remind_at=_at(_day(now, tz, -1), 19, 0, tz),
+            completed_at=_at(_day(now, tz, -1), 19, 0, tz),
         ),
         Item(
             "reminder",
@@ -212,12 +275,13 @@ def _anna(now: datetime) -> tuple[Item, ...]:
 def _boris(now: datetime) -> tuple[Item, ...]:
     tz = "Asia/Yekaterinburg"
     return (
-        Item("task", "todo", "Закрыть тикеты", due_on=_day(now, tz)),
+        Item("task", "todo", "Закрыть тикеты", due_on=_day(now, tz), priority="important"),
         Item(
             "task",
             "done",
             "Код-ревью",
             due_at=_at(_day(now, tz, -1), 17, 0, tz),
+            completed_at=_at(_day(now, tz, -1), 17, 0, tz),
         ),
         Item(
             "meeting",
@@ -251,5 +315,54 @@ def _clara(now: datetime) -> tuple[Item, ...]:
             "pending",
             "Проверить CI",
             remind_at=_at(_day(now, tz, 1), 7, 0, tz),
+        ),
+    )
+
+
+def _anna_chat(now: datetime) -> Conversation:
+    tz = "Europe/Moscow"
+    start = _at(_day(now, tz, 1), 11, 0, tz)
+    request_id = "seed-anna-create-1"
+    return Conversation(
+        client_session_id="seed-anna-chat",
+        messages=(
+            Message("user", "Создай встречу с дизайнером завтра в 11", request_id=request_id),
+            Message(
+                "assistant",
+                "Создать встречу «Дизайнер» завтра в 11:00?",
+                kind="confirmation",
+                request_id=request_id,
+            ),
+        ),
+        proposals=(
+            Proposal(
+                request_id=request_id,
+                action="create",
+                payload={
+                    "item_type": "meeting",
+                    "title": "Дизайнер",
+                    "start_at": start.isoformat(),
+                },
+            ),
+        ),
+    )
+
+
+def _boris_chat() -> Conversation:
+    request_id = "seed-boris-update-1"
+    return Conversation(
+        client_session_id="seed-boris-chat",
+        messages=(
+            Message("user", "Отметь код-ревью выполненным", request_id=request_id),
+            Message("assistant", "Отметила «Код-ревью» как готовую.", request_id=request_id),
+        ),
+        proposals=(
+            Proposal(
+                request_id=request_id,
+                action="update",
+                payload={"status": "done"},
+                status="confirmed",
+                result_title="Код-ревью",
+            ),
         ),
     )

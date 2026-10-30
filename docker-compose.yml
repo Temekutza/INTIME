@@ -28,6 +28,8 @@ services:
     build: ./frontend
     ports:
       - "127.0.0.1:3010:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - backend
 

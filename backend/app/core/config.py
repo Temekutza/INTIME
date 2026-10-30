@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     tts_model: str = "tts-1"
     tts_voice: str = "alloy"
 
+    # Пользователь слоя /api, если нет cookie/Bearer. Не секрет.
+    compat_user_login: str = "anna"
+
     @property
     def database_url(self) -> str:
         return (

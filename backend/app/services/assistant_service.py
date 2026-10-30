@@ -21,24 +21,31 @@ _SYSTEM = """Ты помощник планировщика. Ответь одн
 Если данных не хватает, action=none и спроси в reply. Не выдумывай id записи."""
 
 
-async def handle_message(session: AsyncSession, user: User, text: str) -> AssistantMessageResponse:
+async def interpret(user: User, text: str, context: str | None = None) -> AssistantCommand:
     now = datetime.now(timezone.utc).astimezone(ZoneInfo(user.timezone))
+    chunks = [
+        (
+            f"Сейчас {now.strftime('%Y-%m-%d %H:%M')}, пояс {user.timezone}, "
+            f"день недели {now.strftime('%A')}."
+        )
+    ]
+    if context:
+        chunks.append(context)
+    chunks.append(text)
     raw = await llm.complete(
         [
             {"role": "system", "content": _SYSTEM},
-            {
-                "role": "user",
-                "content": (
-                    f"Сейчас {now.strftime('%Y-%m-%d %H:%M')}, пояс {user.timezone}, "
-                    f"день недели {now.strftime('%A')}.\n{text}"
-                ),
-            },
+            {"role": "user", "content": "\n".join(chunks)},
         ]
     )
     try:
-        command = AssistantCommand.model_validate(raw)
+        return AssistantCommand.model_validate(raw)
     except ValidationError as exc:
         raise Unprocessable("Модель вернула непонятную команду") from exc
+
+
+async def handle_message(session: AsyncSession, user: User, text: str) -> AssistantMessageResponse:
+    command = await interpret(user, text)
     reply = command.reply.strip()
     if command.action == "none":
         return AssistantMessageResponse(reply=reply or "Уточните запрос", action="none", items=[])

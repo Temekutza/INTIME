@@ -30,18 +30,62 @@ services:
     depends_on:
       - backend
 
+  litellm-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${LITELLM_DB_USER:?set LITELLM_DB_USER in .env}
+      POSTGRES_PASSWORD: ${LITELLM_DB_PASSWORD:?set LITELLM_DB_PASSWORD in .env}
+      POSTGRES_DB: ${LITELLM_DB_NAME:?set LITELLM_DB_NAME in .env}
+    ports:
+      - "127.0.0.1:${LITELLM_DB_PORT:-5436}:5432"
+    volumes:
+      - litellm_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  # Host network: системная Ollama слушает только 127.0.0.1:11435.
+  # Из bridge-сети контейнера этот адрес недоступен, а bind Ollama не меняем.
+  litellm:
+    image: ghcr.io/berriai/litellm:main-v1.83.14-stable.patch.3
+    network_mode: host
+    environment:
+      HOST: 127.0.0.1
+      PORT: "4000"
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
+      DATABASE_URL: postgresql://${LITELLM_DB_USER}:${LITELLM_DB_PASSWORD}@127.0.0.1:${LITELLM_DB_PORT:-5436}/${LITELLM_DB_NAME}
+      LITELLM_LOG: ERROR
+    volumes:
+      - ./llm/gateway/config.yaml:/app/config.yaml:ro
+    command:
+      - "--config=/app/config.yaml"
+      - "--host=127.0.0.1"
+      - "--port=4000"
+    depends_on:
+      litellm-db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=5)",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 40s
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   postgres_data:
-
-model_list:
-  - model_name: qwen3-32b
-    litellm_params:
-      model: ollama/hf.co/Qwen/Qwen3-32B-GGUF:Q5_K_M
-      api_base: http://127.0.0.1:11435
-      timeout: 600
-
-general_settings:
-  master_key: os.environ/LITELLM_MASTER_KEY
-
-litellm_settings:
-  request_timeout: 600
+  litellm_postgres_data:

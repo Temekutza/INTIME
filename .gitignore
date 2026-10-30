@@ -19,3 +19,4 @@ frontend/dist/
 
 otherproj/
 .cursor/
+llm/secrets/

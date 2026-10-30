@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { USE_DB_MOCKS } from "./db-mocks.js";
 
 const artifacts = process.env.INTIME_TEST_ARTIFACTS || path.join(os.tmpdir(), "intime-frontend-qa");
 const sizes = [[1280, 800], [1343, 868], [1366, 768], [1440, 900], [1536, 985], [1920, 1080]];
@@ -125,6 +126,7 @@ test("color changes visibly affect task background and persist after reload", as
 });
 
 test("a newly created task is revealed after a thousand archived records", async ({ page }) => {
+  test.skip(!USE_DB_MOCKS, "Мок набора записей из БД выключен");
   const template = baseline.find(event => event.type === "task" && event.status === "planned");
   const archive = Array.from({ length: 1000 }, (_, index) => ({ ...template, id: 3000 + index, title: `Архивная задача ${index}`, date: "2024-01-07", time: "14:45" }));
   await page.route("**/api/events", route => route.request().method() === "GET" ? route.fulfill({ json: { events: archive } }) : route.continue());

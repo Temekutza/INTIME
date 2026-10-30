@@ -35,6 +35,7 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
   const SPEECH_UNSUPPORTED = "Озвучивание в этом браузере недоступно.";
   const SEND_ERROR = "Не удалось отправить. Проверьте соединение.";
   const TIMEOUT_MS = 20000;
+  const MESSAGE_TIMEOUT_MS = 180000;
   const CHECK_ICON = "M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z";
   const TRASH_ICON = "M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12H7L6 9zm4 2v8h1.5v-8H10zm3.5 0v8H15v-8h-1.5z";
 
@@ -576,9 +577,9 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
     });
   }
 
-  async function request(url, options) {
+  async function request(url, options, timeoutMs) {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs || TIMEOUT_MS);
     window.dispatchEvent(new CustomEvent("ritm:request", { detail: { phase: "start" } }));
     try {
       const response = await fetch(url, Object.assign({}, options, { signal: controller.signal }));
@@ -698,7 +699,7 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
           new_event_color: pending.new_event_color || null,
           require_confirmation: true,
         }),
-      });
+      }, MESSAGE_TIMEOUT_MS);
     } catch (error) {
       setBusy(false);
       showSendError(pending, SEND_ERROR, true);
@@ -1294,7 +1295,7 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
     } else if (bucket.heard) {
       bucket.quiet += ms;
     }
-    if ((bucket.heard && bucket.quiet >= 900) || bucket.elapsed >= 15000) requestStopRecording("send");
+    if ((bucket.heard && bucket.quiet >= 900) || bucket.elapsed >= 60000) requestStopRecording("send");
   }
 
   function captureIsActive() {

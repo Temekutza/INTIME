@@ -2,6 +2,7 @@ import { test, expect, chromium } from "@playwright/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { USE_DB_MOCKS } from "./db-mocks.js";
 
 const artifacts = process.env.INTIME_TEST_ARTIFACTS || path.join(os.tmpdir(), "intime-frontend-qa");
 const sizes = [[1280, 800], [1343, 868], [1366, 768], [1440, 900], [1536, 985], [1920, 1080]];
@@ -185,6 +186,7 @@ test("create a reminder through the existing dialogue", async ({ page }) => {
 });
 
 test("a late history response cannot restore a previous conversation", async ({ page }) => {
+  test.skip(!USE_DB_MOCKS, "Мок истории из БД выключен");
   let release;
   const gate = new Promise(resolve => { release = resolve; });
   let started;
@@ -270,6 +272,7 @@ test("initial error, empty records and permission error states", async ({ page }
   await page.goto("/");
   await expect(page.locator("#data-status")).toContainText("Нет доступа");
   await page.unroute("**/api/events");
+  if (!USE_DB_MOCKS) return;
   await page.route("**/api/events", route => route.fulfill({ json: { events: [] } }));
   await page.locator("#sync-status").click();
   await expect(page.locator("#records")).toContainText("Добавьте первую задачу");
@@ -343,6 +346,7 @@ for (const [width, height] of sizes) {
 }
 
 test("long content, many records and history scroll independently; panel widths", async ({ page }) => {
+  test.skip(!USE_DB_MOCKS, "Мок набора записей из БД выключен");
   const base = (await (await page.request.get("/api/events")).json()).events.find(e => e.type === "task" && e.status === "planned");
   const longTitle = "ОченьДлинноеНазваниеБезПробелов".repeat(10);
   const events = Array.from({ length: 200 }, (_, i) => ({ ...base, id: 2000 + i, title: i === 0 ? longTitle : `Тестовая задача ${i}` }));

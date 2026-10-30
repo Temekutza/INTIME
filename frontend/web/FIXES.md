@@ -94,7 +94,7 @@
 ошибок JS и горизонтального overflow; измерены 14/14/12 px для body/задачи/метаданных.
 Тестовые сущности в его базу при этой проверке не записывались.
 
-Артефакты в `%TEMP%\aivritm-fixes-qa\`:
+Артефакты в `%TEMP%\intime-fixes-qa\`:
 
 - `create-task-form.png`, `created-task-selected.png`, `creation-network-error.png`.
 - `visible-task-colors.png`, `thousand-records-new-task.png`.
@@ -105,7 +105,7 @@
 
 ## Файлы этого этапа
 
-Корень: `D:\Aviritm\Aivritm`.
+Корень: `D:\Aviritm\intime`.
 
 - `ritm/api/app.py`, `ritm/core/assistant.py`: создание из формы, политика статики.
 - `web/lib/create-event.js`, `web/lib/layout.js`: форма и состояние левой панели.
@@ -117,12 +117,12 @@
 
 Чужие незавершённые изменения сохранены. Рабочая `data/ritm.db` не использовалась.
 Перед перезапуском preview сделана SQLite-копия его отдельной базы:
-`%TEMP%\aivritm-preview\before-ui-fixes-*.db`.
+`%TEMP%\intime-preview\before-ui-fixes-*.db`.
 
 ## Открытие и ограничения
 
 По ранее данному поручению обновлённый preview оставлен на
-`http://127.0.0.1:8765`, база `%TEMP%\aivritm-preview\ritm.db`.
+`http://127.0.0.1:8765`, база `%TEMP%\intime-preview\ritm.db`.
 Уже открытую вкладку один раз обновить через **Ctrl+F5**.
 
 Приоритеты, пространства, отдельные пользователи, доставка уведомлений и внешние

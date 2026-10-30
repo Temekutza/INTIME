@@ -1,6 +1,6 @@
 """Изолированная Postgres для тестов.
 
-Рабочая база `aivritm` запрещена. Схема каждый прогон берётся из backend/sql/*.sql,
+Рабочая база `intime` запрещена. Схема каждый прогон берётся из backend/sql/*.sql,
 чтобы тестовая БД оставалась согласованной с файлами схемы.
 """
 
@@ -18,8 +18,8 @@ from psycopg.pq import ExecStatus
 ROOT = Path(__file__).resolve().parents[1]
 SQL_DIR = ROOT / "backend" / "sql"
 
-FORBIDDEN_DATABASES = frozenset({"aivritm", "postgres", "template0", "template1"})
-DEFAULT_TEST_DATABASE = "aivritm_test"
+FORBIDDEN_DATABASES = frozenset({"intime", "postgres", "template0", "template1"})
+DEFAULT_TEST_DATABASE = "intime_test"
 _DOTENV_KEYS = frozenset({"POSTGRES_USER", "POSTGRES_PASSWORD"})
 _DB_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -66,8 +66,8 @@ def configure_test_environment() -> PostgresTarget:
     os.environ["POSTGRES_HOST"] = os.environ.get("TEST_POSTGRES_HOST", "127.0.0.1")
     os.environ["POSTGRES_PORT"] = os.environ.get("TEST_POSTGRES_PORT", "5435")
     os.environ["POSTGRES_DB"] = database
-    os.environ["POSTGRES_USER"] = os.environ.get("POSTGRES_USER", "aivritm")
-    os.environ["POSTGRES_PASSWORD"] = os.environ.get("POSTGRES_PASSWORD", "aivritm")
+    os.environ["POSTGRES_USER"] = os.environ.get("POSTGRES_USER", "intime")
+    os.environ["POSTGRES_PASSWORD"] = os.environ.get("POSTGRES_PASSWORD", "intime")
     os.environ["LLM_API_KEY"] = ""
     os.environ["STT_API_KEY"] = ""
     os.environ["TTS_API_KEY"] = ""
@@ -101,7 +101,7 @@ def schema_sql_files() -> tuple[Path, ...]:
 
 
 def _reject_application_database(name: str) -> None:
-    if name in FORBIDDEN_DATABASES or name == "aivritm":
+    if name in FORBIDDEN_DATABASES or name == "intime":
         raise RuntimeError(
             f"Отказ: тесты нельзя запускать против базы {name!r}. "
             f"Нужна изолированная база (по умолчанию {DEFAULT_TEST_DATABASE})."

@@ -194,7 +194,7 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 .menu-note { padding: 8px 12px; font-size: var(--text-xs); color: var(--ink-muted); }
 .message-user { align-self: stretch; padding: 12px; background: var(--bg); border: 1px solid var(--line-strong); border-radius: 14px 14px 5px 14px; }
 .message-assistant, .message-error { align-self: stretch; min-width: 0; max-width: 100%; }
-.message-assistant::before { content: 'Ритм AI'; display: block; color: var(--accent); font-size: var(--text-xs); font-weight: 600; margin-bottom: 7px; }
+.message-assistant::before { content: 'InTime AI'; display: block; color: var(--accent); font-size: var(--text-xs); font-weight: 600; margin-bottom: 7px; }
 .message-error .message__text { color: var(--danger); }
 .message__text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-md); line-height: 1.55; }
 .event-list { margin-top: 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--bg); }

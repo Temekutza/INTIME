@@ -1,4 +1,4 @@
-# Aivritm: интерфейс и проверка реализации
+# intime: интерфейс и проверка реализации
 
 Актуальный этап: единые Select/DatePicker/TimePicker/Popover и модальные окна,
 доработанная панель ассистента и обязательное подтверждение создания через чат.
@@ -148,7 +148,7 @@ E2E запускают настоящий backend с FixedClock и своей Te
 
 ## 7. Скриншоты
 
-Артефакты текущего запуска: `%TEMP%\aivritm-frontend-qa\`.
+Артефакты текущего запуска: `%TEMP%\intime-frontend-qa\`.
 
 - `tasks-editor-{width}x{height}.png` — шесть целевых размеров, редактор и диалог.
 - `reminders-{width}x{height}.png` — шесть целевых размеров, напоминания.
@@ -163,7 +163,7 @@ E2E запускают настоящий backend с FixedClock и своей Te
 
 ## 8. Изменённые файлы
 
-Корень путей: `D:\Aviritm\Aivritm`.
+Корень путей: `D:\Aviritm\intime`.
 
 - `web/index.html`, `web/styles.css`, `web/app.js` — каркас и интеграция диалога.
 - `web/dashboard.js`, `web/lib/{types.d.ts,api.js,store.js,model.js,ui.js,views.js,editor.js}`
@@ -299,15 +299,15 @@ npm --prefix web ci
 npm --prefix web run typecheck
 npm --prefix web run lint
 npm --prefix web test
-$env:AIVRITM_TEST_PYTHON = (Resolve-Path .venv\Scripts\python.exe).Path
+$env:INTIME_TEST_PYTHON = (Resolve-Path .venv\Scripts\python.exe).Path
 npm --prefix web exec -- playwright install chromium
 npm --prefix web run test:e2e
 ```
 
 Для установленного отдельно Chromium можно передать полный путь к `chrome.exe`
-через `AIVRITM_BROWSER_PATH`. В текущей проверке использован
+через `INTIME_BROWSER_PATH`. В текущей проверке использован
 `%LOCALAPPDATA%\ms-playwright\chromium-1248\chrome-win64\chrome.exe`, а Python взят
-из `%TEMP%\aivritm-frontend-venv\Scripts\python.exe`.
-`AIVRITM_TEST_PORT` меняет тестовый порт; `AIVRITM_TEST_ARTIFACTS` — папку отчётов.
+из `%TEMP%\intime-frontend-venv\Scripts\python.exe`.
+`INTIME_TEST_PORT` меняет тестовый порт; `INTIME_TEST_ARTIFACTS` — папку отчётов.
 По умолчанию отчёты, скриншоты, трассы, временные базы и профиль тестового
 браузера остаются вне репозитория.

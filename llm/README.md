@@ -56,7 +56,7 @@ llm/scripts/keys.sh create --alias intime-app --rpm 30 --tpm 20000 --duration 30
 
 Файл ключа: `llm/secrets/intime-app.key`. Каталог `llm/secrets/` не коммитится.
 
-Посмотреть лимиты и расход, не печатая полный ключ:
+Посмотреть лимиты и расход. Запрос идёт по alias, ключ в URL не попадает:
 
 ```bash
 llm/scripts/keys.sh info --alias intime-app

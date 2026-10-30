@@ -7,7 +7,7 @@ pip install -r scripts/testdatagen/requirements.txt
 python scripts/testdatagen/seed.py
 ```
 
-Подключение по умолчанию: `postgresql://aivritm:aivritm@127.0.0.1:5435/aivritm`. Другой адрес задаётся переменной `DATABASE_URL`.
+Подключение по умолчанию: `postgresql://intime:intime@127.0.0.1:5435/intime`. Другой адрес задаётся переменной `DATABASE_URL`.
 
 Пароль у всех троих один: `testpass`. В `password_hash` лежит SHA-256 от этой строки в hex, без соли. Это метка для тестов, не схема боевой аутентификации.
 

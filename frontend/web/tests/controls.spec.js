@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const artifacts = process.env.AIVRITM_TEST_ARTIFACTS || path.join(os.tmpdir(), "aivritm-controls-qa");
+const artifacts = process.env.INTIME_TEST_ARTIFACTS || path.join(os.tmpdir(), "intime-controls-qa");
 let baseline;
 test.beforeAll(async ({ request }) => { baseline = (await (await request.get("/api/events")).json()).events; });
 test.beforeEach(async ({ page }) => {

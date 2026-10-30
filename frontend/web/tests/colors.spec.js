@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const artifacts = process.env.AIVRITM_TEST_ARTIFACTS || path.join(os.tmpdir(), "aivritm-frontend-qa");
+const artifacts = process.env.INTIME_TEST_ARTIFACTS || path.join(os.tmpdir(), "intime-frontend-qa");
 const popup = page => page.locator(".color-popover:popover-open");
 let baseline;
 

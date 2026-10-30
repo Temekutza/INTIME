@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const artifacts = process.env.AIVRITM_TEST_ARTIFACTS || path.join(os.tmpdir(), "aivritm-frontend-qa");
+const artifacts = process.env.INTIME_TEST_ARTIFACTS || path.join(os.tmpdir(), "intime-frontend-qa");
 const sizes = [[1280, 800], [1343, 868], [1366, 768], [1440, 900], [1536, 985], [1920, 1080]];
 let baseline = [];
 
@@ -365,16 +365,16 @@ test("long content, many records and history scroll independently; panel widths"
 });
 
 test("actual browser tab zoom 125 percent keeps desktop composition", async ({ baseURL }) => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "aivritm-zoom-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "intime-zoom-"));
   const extension = path.join(directory, "extension");
   await fs.mkdir(extension);
   await fs.writeFile(path.join(extension, "manifest.json"), JSON.stringify({
-    manifest_version: 3, name: "Aivritm isolated zoom test", version: "1.0", permissions: ["tabs"],
+    manifest_version: 3, name: "intime isolated zoom test", version: "1.0", permissions: ["tabs"],
     background: { service_worker: "worker.js" },
   }));
   await fs.writeFile(path.join(extension, "worker.js"), "chrome.tabs.onUpdated.addListener((id, info, tab) => { if (tab.url?.startsWith('http://127.0.0.1:')) chrome.tabs.setZoom(id, 1.25); });");
   const context = await chromium.launchPersistentContext(path.join(directory, "profile"), {
-    headless: true, channel: "chromium", executablePath: process.env.AIVRITM_BROWSER_PATH,
+    headless: true, channel: "chromium", executablePath: process.env.INTIME_BROWSER_PATH,
     viewport: null, timezoneId: "Europe/Moscow", locale: "ru-RU",
     args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, "--window-size=1920,1080"],
   });

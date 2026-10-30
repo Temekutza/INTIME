@@ -130,11 +130,10 @@ cmd_info() {
     esac
   done
   [[ -n "$alias" ]] || die "Нужен --alias"
-  local file key raw
+  local file raw
   file="$(alias_file "$alias")"
   [[ -f "$file" ]] || die "Нет файла ключа: $file"
-  key="$(tr -d '[:space:]' < "$file")"
-  raw="$(api POST /v2/key/info "$(python3 -c 'import json,os; print(json.dumps({"key_aliases":[os.environ["ALIAS"]]}))' ALIAS="$alias")")"
+  raw="$(api POST /v2/key/info "$(ALIAS="$alias" python3 -c 'import json,os; print(json.dumps({"key_aliases":[os.environ["ALIAS"]]}))')")"
   split_response "$raw"
   [[ "$HTTP_CODE" == "200" ]] || die "key/info вернул ${HTTP_CODE}: ${HTTP_BODY}"
   RESPONSE="$HTTP_BODY" python3 - <<'PY'

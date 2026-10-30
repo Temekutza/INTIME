@@ -19,7 +19,7 @@ import psycopg
 
 from dataset import PASSWORD, build
 
-DEFAULT_URL = "postgresql://aivritm:aivritm@127.0.0.1:5435/aivritm"
+DEFAULT_URL = "postgresql://intime:intime@127.0.0.1:5435/intime"
 
 INSERT_ITEM = """
     INSERT INTO planner_items (

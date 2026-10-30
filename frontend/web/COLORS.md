@@ -1,4 +1,4 @@
-# Персонализация цветов Aivritm
+# Персонализация цветов intime
 
 Обновление: цвета задач теперь заметны и в мягкой подложке карточек;
 цвет можно выбрать в отдельной форме создания. Последний прогон —
@@ -123,7 +123,7 @@ CSS-значения с 422. UI также принимает короткий `
   отклонение CSS-инъекций, недоступность цвета удалённой записи и идемпотентность.
 
 Проверки работают на временных базах с FixedClock. Рабочая база и архив не открывались
-для ручного тестирования. Артефакты: `%TEMP%\aivritm-colors-qa\`:
+для ручного тестирования. Артефакты: `%TEMP%\intime-colors-qa\`:
 `colors-calendar-and-chat.png`, `colors-reminder-editor.png`, `colors-save-error.png`,
 `color-settings-{width}x{height}.png`, `color-creation-{width}x{height}.png`,
 `e2e-results.json`, `e2e-final.log`, `pytest-final.log`.

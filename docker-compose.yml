@@ -16,10 +16,10 @@ services:
   backend:
     build: ./backend
     env_file: .env
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:8010:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app
     depends_on:

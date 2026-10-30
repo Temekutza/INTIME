@@ -9,11 +9,15 @@ logger = logging.getLogger(__name__)
 
 
 def _key() -> str:
-    return (settings.tts_api_key or settings.llm_api_key or "").strip()
+    if settings.tts_api_key is not None:
+        return settings.tts_api_key.strip()
+    return (settings.llm_api_key or "").strip()
 
 
 def _base_url() -> str:
-    return (settings.tts_base_url or settings.llm_base_url).rstrip("/")
+    if settings.tts_base_url is not None:
+        return settings.tts_base_url.rstrip("/")
+    return settings.llm_base_url.rstrip("/")
 
 
 async def synthesize(text: str, voice: str | None) -> tuple[bytes, str]:

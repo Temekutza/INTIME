@@ -9,11 +9,16 @@ logger = logging.getLogger(__name__)
 
 
 def _key() -> str:
-    return (settings.stt_api_key or settings.llm_api_key or "").strip()
+    # Пустая переменная отключает наследование: иначе речь уйдёт в чат-шлюз.
+    if settings.stt_api_key is not None:
+        return settings.stt_api_key.strip()
+    return (settings.llm_api_key or "").strip()
 
 
 def _base_url() -> str:
-    return (settings.stt_base_url or settings.llm_base_url).rstrip("/")
+    if settings.stt_base_url is not None:
+        return settings.stt_base_url.rstrip("/")
+    return settings.llm_base_url.rstrip("/")
 
 
 async def transcribe(filename: str, content: bytes, content_type: str) -> str:

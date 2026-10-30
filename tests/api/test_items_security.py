@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from tests.conftest import Accounts
+from tests.postgres_harness import PostgresTarget, connect_test
 
 
 def test_cannot_patch_someone_elses_item(client: TestClient, accounts: Accounts) -> None:
@@ -102,3 +103,19 @@ def test_due_on_clears_due_at(client: TestClient, accounts: Accounts) -> None:
     assert patched.status_code == 200
     assert patched.json()["due_on"] == "2026-10-31"
     assert patched.json()["due_at"] is None
+
+
+def test_delete_hides_item_but_keeps_row(
+    client: TestClient, accounts: Accounts, test_database: PostgresTarget
+) -> None:
+    accounts.register()
+    created = client.post("/api/v1/items", json={"item_type": "task", "title": "Удалить"})
+    item_id = created.json()["id"]
+    assert client.delete(f"/api/v1/items/{item_id}").status_code == 204
+    assert client.get(f"/api/v1/items/{item_id}").status_code == 404
+    with connect_test(test_database) as conn:
+        row = conn.execute(
+            "SELECT deleted_at FROM planner_items WHERE id = %s",
+            (item_id,),
+        ).fetchone()
+    assert row is not None and row[0] is not None

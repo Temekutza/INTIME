@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.item_status import ItemStatus
@@ -32,7 +32,7 @@ def _filtered(user_id: int, filters: ItemFilters):
     stmt = (
         select(PlannerItem, ItemStatus.code)
         .join(ItemStatus, PlannerItem.status_id == ItemStatus.id)
-        .where(PlannerItem.user_id == user_id)
+        .where(PlannerItem.user_id == user_id, PlannerItem.deleted_at.is_(None))
     )
     if filters.item_type is not None:
         stmt = stmt.where(PlannerItem.item_type_code == filters.item_type)
@@ -96,7 +96,11 @@ async def get_item(session: AsyncSession, user_id: int, item_id: int) -> OwnedIt
     row = await session.execute(
         select(PlannerItem, ItemStatus.code)
         .join(ItemStatus, PlannerItem.status_id == ItemStatus.id)
-        .where(PlannerItem.user_id == user_id, PlannerItem.id == item_id)
+        .where(
+            PlannerItem.user_id == user_id,
+            PlannerItem.id == item_id,
+            PlannerItem.deleted_at.is_(None),
+        )
     )
     found = row.first()
     if found is None:
@@ -109,4 +113,11 @@ def add(session: AsyncSession, item: PlannerItem) -> None:
 
 
 async def delete_item(session: AsyncSession, item: PlannerItem) -> None:
-    await session.delete(item)
+    item.deleted_at = datetime.now(timezone.utc)
+    await session.execute(
+        text(
+            "UPDATE reminder_dispatches SET status = 'cancelled' "
+            "WHERE item_id = :item_id AND status = 'pending'"
+        ),
+        {"item_id": item.id},
+    )

@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterator
+from typing import NoReturn
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -22,28 +23,36 @@ _CHECK_MESSAGES = {
 }
 
 
+def _raise_from_integrity(exc: IntegrityError) -> NoReturn:
+    orig = getattr(exc, "orig", None)
+    sqlstate = getattr(orig, "sqlstate", None)
+    constraint = getattr(orig, "constraint_name", None)
+    if sqlstate == "23505":
+        raise Conflict("Логин или почта уже заняты") from exc
+    if sqlstate == "23503":
+        raise Unprocessable("Неизвестный тип или статус") from exc
+    if sqlstate == "23514":
+        raise Unprocessable(_CHECK_MESSAGES.get(constraint or "", "Запись нарушает правила")) from exc
+    raise exc
+
+
 async def get_session() -> AsyncIterator[AsyncSession]:
     async with SessionLocal() as session:
         try:
             yield session
             await session.commit()
+        except IntegrityError as exc:
+            await session.rollback()
+            _raise_from_integrity(exc)
         except Exception:
             await session.rollback()
             raise
 
 
 async def persist(session: AsyncSession) -> None:
+    """Пишет изменения в текущую транзакцию запроса. Commit делает get_session."""
     try:
-        await session.commit()
+        await session.flush()
     except IntegrityError as exc:
         await session.rollback()
-        orig = getattr(exc, "orig", None)
-        sqlstate = getattr(orig, "sqlstate", None)
-        constraint = getattr(orig, "constraint_name", None)
-        if sqlstate == "23505":
-            raise Conflict("Логин или почта уже заняты") from exc
-        if sqlstate == "23503":
-            raise Unprocessable("Неизвестный тип или статус") from exc
-        if sqlstate == "23514":
-            raise Unprocessable(_CHECK_MESSAGES.get(constraint or "", "Запись нарушает правила")) from exc
-        raise
+        _raise_from_integrity(exc)

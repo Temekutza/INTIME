@@ -80,7 +80,6 @@ async def create_item(session: AsyncSession, user: User, data: ItemCreate) -> It
         remind_at=data.remind_at,
     )
     item_repository.add(session, item)
-    await session.flush()
     await persist(session)
     await session.refresh(item)
     return to_read(item, status.code)
@@ -148,7 +147,6 @@ async def update_item(session: AsyncSession, user: User, item_id: int, data: Ite
         due_at=item.due_at,
         remind_at=item.remind_at,
     )
-    await session.flush()
     await persist(session)
     await session.refresh(item)
     return to_read(item, status.code)

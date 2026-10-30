@@ -1,11 +1,10 @@
+from datetime import datetime, timezone
+
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.auth_session import AuthSession
 from app.models.user import User
-
-
-async def get_by_id(session: AsyncSession, user_id: int) -> User | None:
-    return await session.get(User, user_id)
 
 
 async def get_by_login(session: AsyncSession, login: str) -> User | None:
@@ -28,3 +27,14 @@ async def email_taken(session: AsyncSession, email: str, *, except_id: int | Non
 
 def add(session: AsyncSession, user: User) -> None:
     session.add(user)
+
+
+async def get_by_token_hash(session: AsyncSession, token_hash: str) -> User | None:
+    return await session.scalar(
+        select(User)
+        .join(AuthSession, AuthSession.user_id == User.id)
+        .where(
+            AuthSession.token_hash == token_hash,
+            AuthSession.expires_at > datetime.now(timezone.utc),
+        )
+    )

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import persist
@@ -64,17 +64,6 @@ async def update_profile(session: AsyncSession, user: User, data: UserUpdate) ->
     await persist(session)
     await session.refresh(user)
     return user
-
-
-async def user_from_token(session: AsyncSession, token: str) -> User | None:
-    return await session.scalar(
-        select(User)
-        .join(AuthSession, AuthSession.user_id == User.id)
-        .where(
-            AuthSession.token_hash == hash_token(token),
-            AuthSession.expires_at > datetime.now(timezone.utc),
-        )
-    )
 
 
 async def _open_session(session: AsyncSession, user: User) -> IssuedSession:

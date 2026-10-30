@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from urllib.parse import urlsplit
 
@@ -6,6 +7,8 @@ import httpx
 
 from app.core.config import settings
 from app.core.errors import BadGateway, ServiceUnavailable
+
+logger = logging.getLogger(__name__)
 
 _LOOPBACK = frozenset({"127.0.0.1", "localhost", "::1"})
 
@@ -93,12 +96,15 @@ async def complete(messages: list[dict[str, str]]) -> dict:
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
             )
     except httpx.HTTPError as exc:
+        logger.warning("LLM request failed url=%s error=%s", url, type(exc).__name__)
         raise BadGateway("LLM не ответил") from exc
     if response.status_code >= 400:
+        logger.warning("LLM bad status url=%s status=%s", url, response.status_code)
         raise BadGateway("LLM не ответил")
     try:
         payload = response.json()
     except json.JSONDecodeError as exc:
+        logger.warning("LLM invalid JSON url=%s status=%s", url, response.status_code)
         raise BadGateway("Модель вернула непонятный ответ") from exc
     if not isinstance(payload, dict):
         raise BadGateway("Модель вернула непонятный ответ")

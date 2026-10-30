@@ -1,53 +1,14 @@
-import asyncio
-import uuid
-
-import asyncpg
-import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-
-
-class Accounts:
-    def __init__(self, client: TestClient) -> None:
-        self.client = client
-        self.logins: list[str] = []
-
-    def register(self, client: TestClient | None = None, **extra: object) -> dict:
-        http = client or self.client
-        login = f"u{uuid.uuid4().hex[:12]}"
-        payload = {"login": login, "password": "password1", "timezone": "Europe/Moscow"}
-        payload.update(extra)
-        response = http.post("/api/v1/auth/register", json=payload)
-        assert response.status_code == 201, response.text
-        self.logins.append(login)
-        return response.json()
-
-
-@pytest.fixture
-def accounts(client: TestClient) -> Accounts:
-    created = Accounts(client)
-    yield created
-    if not created.logins:
-        return
-
-    async def wipe() -> None:
-        conn = await asyncpg.connect(
-            host="127.0.0.1",
-            port=5435,
-            user="aivritm",
-            password="aivritm",
-            database="aivritm",
-        )
-        await conn.execute("DELETE FROM users WHERE login = ANY($1::text[])", created.logins)
-        await conn.close()
-
-    asyncio.run(wipe())
+from tests.conftest import Accounts
 
 
 def test_register_login_and_profile(client: TestClient, accounts: Accounts) -> None:
     created = accounts.register(email="Person@example.com")
     assert created["user"]["timezone"] == "Europe/Moscow"
+    assert "password" not in created["user"]
+    assert "password_hash" not in created["user"]
     token = created["token"]
 
     me = client.get("/api/v1/users/me")

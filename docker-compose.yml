@@ -32,3 +32,16 @@ services:
 
 volumes:
   postgres_data:
+
+model_list:
+  - model_name: qwen3-32b
+    litellm_params:
+      model: ollama/hf.co/Qwen/Qwen3-32B-GGUF:Q5_K_M
+      api_base: http://127.0.0.1:11435
+      timeout: 600
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  request_timeout: 600

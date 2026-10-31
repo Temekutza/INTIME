@@ -18,3 +18,4 @@ export interface RitmEvent {
 }
 export type EventPatch = Partial<Pick<RitmEvent, "title" | "date" | "time" | "status">>;
 export type View = "tasks" | "reminders" | "calendar";
+export type CalendarLayout = "list" | "month";

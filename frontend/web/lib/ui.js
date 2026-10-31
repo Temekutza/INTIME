@@ -42,6 +42,7 @@ const paths = {
   time: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
   paperclip: '<path d="m9 15 7-7a3 3 0 0 0-4-4l-8 8a5 5 0 0 0 7 7l9-9M8 14l7-7"/>',
   chevron: '<path d="m6 9 6 6 6-6"/>',
+  list: '<path d="M4 7h16M4 12h16M4 17h16"/>',
 };
 
 /** @param {string} name */

@@ -79,6 +79,11 @@ export function renderReminders(host, events, order, actions) {
   }
 }
 
+/** Заглушка сетки месяца, пока нет настоящей календарной вёрстки. @param {HTMLElement} host */
+export function renderCalendarGridStub(host) {
+  host.replaceChildren(empty("Календарная сетка появится позже. Записи дня сейчас доступны в режиме списка."));
+}
+
 /** @param {HTMLElement} host @param {RitmEvent[]} events @param {string} date @param {Actions} actions */
 export function renderCalendar(host, events, date, actions) {
   host.replaceChildren(el("h2", "date-heading", formatDate(date)));

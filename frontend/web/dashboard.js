@@ -3,7 +3,7 @@ import { eventStore } from "./lib/store.js";
 import { EventEditor } from "./lib/editor.js";
 import { button, el, element, empty, icon, input, select } from "./lib/ui.js";
 import { clock, eventMeta, isoDay } from "./lib/model.js";
-import { renderCalendar, renderDay, renderReminders, renderTasks } from "./lib/views.js";
+import { renderCalendar, renderCalendarGridStub, renderDay, renderReminders, renderTasks } from "./lib/views.js";
 import { searchEvents } from "./lib/api.js";
 import { colorStore } from "./lib/colors.js";
 import { setupColorSettings } from "./lib/color-settings.js";
@@ -30,6 +30,12 @@ let view = "tasks";
 let chatRequests = 0;
 let chatError = false;
 let currentDay = isoDay(clock.now());
+/** @type {import('./lib/types').CalendarLayout} */
+let calendarLayout = "list";
+try {
+  const saved = localStorage.getItem("ritm.calendar-layout");
+  if (saved === "list" || saved === "month") calendarLayout = saved;
+} catch { /* optional preference */ }
 let stopped = false;
 /** @type {ReturnType<typeof setTimeout> | undefined} */
 let timer;
@@ -132,9 +138,17 @@ function render() {
   element("day-task-count").textContent = `${counts.done} из ${counts.tasks}`;
   if (!store.loaded) {
     records.replaceChildren(empty(store.loading ? "Загружаем ваши планы…" : "Не удалось загрузить записи. Повторите попытку."));
-  } else if (view === "tasks") renderTasks(records, store.events, select("status-filter").value, select("sort-order").value, editor.id, collapsed, actions);
+  }   else if (view === "tasks") renderTasks(records, store.events, select("status-filter").value, select("sort-order").value, editor.id, collapsed, actions);
   else if (view === "reminders") renderReminders(records, store.events, select("sort-order").value, actions);
+  else if (calendarLayout === "month") renderCalendarGridStub(records);
   else renderCalendar(records, store.events, input("calendar-date").value, actions);
+  for (const btn of element("calendar-layout").querySelectorAll("[data-calendar-layout]")) {
+    if (!(btn instanceof HTMLButtonElement)) continue;
+    const on = btn.dataset.calendarLayout === calendarLayout;
+    btn.classList.toggle("is-active", on);
+    btn.setAttribute("aria-checked", String(on));
+    btn.tabIndex = on ? 0 : -1;
+  }
   renderSync();
   enhanceFields();
 }
@@ -211,6 +225,24 @@ document.querySelectorAll("[data-prompt]").forEach(node => node.addEventListener
 for (const id of ["status-filter", "sort-order", "calendar-date"]) element(id).addEventListener("change", render);
 input("calendar-date").value = currentDay;
 element("calendar-today").addEventListener("click", () => { input("calendar-date").value = isoDay(clock.now()); render(); });
+/** @param {string | undefined} next */
+function setCalendarLayout(next) {
+  if (next !== "list" && next !== "month") return;
+  calendarLayout = next;
+  try { localStorage.setItem("ritm.calendar-layout", next); } catch { /* optional preference */ }
+  render();
+}
+element("calendar-layout").addEventListener("click", event => {
+  const btn = event.target instanceof Element ? event.target.closest("[data-calendar-layout]") : null;
+  if (btn instanceof HTMLButtonElement) setCalendarLayout(btn.dataset.calendarLayout);
+});
+element("calendar-layout").addEventListener("keydown", event => {
+  if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  event.preventDefault();
+  setCalendarLayout(calendarLayout === "list" ? "month" : "list");
+  const active = element("calendar-layout").querySelector(".is-active");
+  if (active instanceof HTMLButtonElement) active.focus();
+});
 sync.addEventListener("click", () => { void store.load(); });
 element("search-form").addEventListener("submit", event => { event.preventDefault(); void search(); });
 searchInput.addEventListener("input", () => { closeSearch(); searchStatus.textContent = ""; });

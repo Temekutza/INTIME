@@ -123,6 +123,11 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
   box-shadow: none;
   border: 1px solid var(--line);
 }
+.view-toggle { display: inline-flex; align-items: stretch; height: 36px; margin-left: 4px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; flex: 0 0 auto; }
+.view-toggle__btn { display: grid; place-items: center; width: 36px; color: var(--ink-secondary); background: var(--bg); }
+.view-toggle__btn + .view-toggle__btn { border-left: 1px solid var(--line); }
+.view-toggle__btn:hover { background: var(--surface-hover); }
+.view-toggle__btn.is-active { color: var(--accent); background: var(--assistant-bg); }
 .data-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; background: var(--surface-error); color: var(--danger); padding: 10px 12px; border-radius: var(--radius-s); margin-bottom: 12px; font-size: var(--text-sm); }
 .content-grid { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 auto; min-height: 0; min-width: 0; gap: 14px; }
 .content-grid.has-editor { grid-template-columns: minmax(240px, 1fr) minmax(250px, .65fr); }
@@ -185,7 +190,8 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 .composer-box { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 5px; padding: 10px; border: 1px solid var(--line-strong); background: var(--bg); border-radius: var(--radius); }
 .composer-box:focus-within { border-color: var(--accent); }
 .composer-box.is-listening { border-color: var(--danger-strong); box-shadow: 0 0 0 3px rgb(181 55 72 / 16%); }
-#message-input { width: 100%; min-height: 34px; max-height: 160px; resize: none; border: 0; padding: 0 1px; background: transparent; font-size: var(--text-sm); line-height: 1.6; }
+#message-input { width: 100%; min-height: 34px; max-height: 160px; resize: none; border: 0; border-radius: 0; padding: 0 1px; background: transparent; font-size: var(--text-sm); line-height: 1.6; outline: none; box-shadow: none; }
+#message-input:focus, #message-input:focus-visible { outline: none; box-shadow: none; border: 0; }
 #message-input::placeholder { color: var(--ink-placeholder); }
 #message-input.is-interim { font-style: italic; color: var(--ink-secondary); }
 #send-button { background: var(--accent); color: var(--on-accent); }

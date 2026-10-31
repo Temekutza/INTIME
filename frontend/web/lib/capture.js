@@ -9,8 +9,8 @@ export const HANG_MS = 400;
 export const PREVIEW_QUIET_MS = 700;
 /** Если паузы нет, всё равно показывать текст, не дожидаясь конца. */
 export const PREVIEW_CHUNK_MS = 2500;
-/** Пауза, после которой фраза отправляется. Короче срывает длинную реплику. */
-export const QUIET_MS = 10000;
+/** Пауза, после которой фраза отправляется. */
+export const QUIET_MS = 5000;
 export const MAX_CAPTURE_MS = 60000;
 
 /**

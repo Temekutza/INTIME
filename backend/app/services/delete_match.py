@@ -3,42 +3,33 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+from num2words import num2words
+
 from app.schemas.item import ItemRead
 from app.services.list_phrase import mentioned_day
 
-_ORDINALS = {
-    "1": 1,
-    "первую": 1,
-    "первый": 1,
-    "первая": 1,
-    "2": 2,
-    "вторую": 2,
-    "второй": 2,
-    "3": 3,
-    "третью": 3,
-    "третий": 3,
-    "4": 4,
-    "четвертую": 4,
-    "четвертый": 4,
-    "5": 5,
-    "пятую": 5,
-    "пятый": 5,
-    "6": 6,
-    "шестую": 6,
-    "шестой": 6,
-    "7": 7,
-    "седьмую": 7,
-    "седьмой": 7,
-    "8": 8,
-    "восьмую": 8,
-    "восьмой": 8,
-    "9": 9,
-    "девятую": 9,
-    "девятый": 9,
-    "10": 10,
-    "десятую": 10,
-    "десятый": 10,
-}
+
+def _ordinal_forms() -> dict[str, int]:
+    forms: dict[str, int] = {}
+    for number in range(1, 31):
+        forms[str(number)] = number
+        for case in ("n", "g", "d", "a", "i", "p"):
+            for gender in ("m", "f", "n"):
+                for animate in (True, False):
+                    word = num2words(
+                        number,
+                        lang="ru",
+                        to="ordinal",
+                        case=case,
+                        gender=gender,
+                        plural=False,
+                        animate=animate,
+                    )
+                    forms[word.casefold().replace("ё", "е")] = number
+    return forms
+
+
+_ORDINALS = _ordinal_forms()
 _STOP = frozenset(
     """
     удали удалить удалите убери убрать уберите сотри стереть

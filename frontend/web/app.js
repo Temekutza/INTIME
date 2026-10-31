@@ -16,19 +16,6 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
     confirmation: "Напишите «да» или «нет»…",
     choice: "Напишите номер записи…",
   };
-  const ORDINALS = [
-    "",
-    "первую",
-    "вторую",
-    "третью",
-    "четвёртую",
-    "пятую",
-    "шестую",
-    "седьмую",
-    "восьмую",
-    "девятую",
-    "десятую",
-  ];
   const WEEKDAYS = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
   const MONTHS = ["янв.", "февр.", "мар.", "апр.", "мая", "июн.", "июл.", "авг.", "сент.", "окт.", "нояб.", "дек."];
   const MIC_DENIED = "Нет доступа к микрофону. Разрешите его в браузере или напишите текстом.";
@@ -268,7 +255,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
   }
 
   function choiceText(index) {
-    return ORDINALS[index] || ("номер " + index);
+    return "номер " + index;
   }
 
   function sayStatus(text) {

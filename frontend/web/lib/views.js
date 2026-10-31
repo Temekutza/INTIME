@@ -1,7 +1,7 @@
 // @ts-check
 import { el, icon, button, empty } from "./ui.js";
 import { paintObject } from "./colors.js";
-import { clock, eventMeta, formatDate, groupTasks, isoDay, relativeTime, sortedEvents, eventStart } from "./model.js";
+import { clock, eventMeta, formatDate, groupReminders, groupTasks, isoDay, relativeTime, sortedEvents, eventStart } from "./model.js";
 /** @typedef {import('./types').RitmEvent} RitmEvent */
 /** @typedef {{ open: (event: RitmEvent) => void, complete: (event: RitmEvent, done: boolean) => void, saving: Set<number> }} Actions */
 /** Client-side pages bound DOM size; the API returns the complete collection for counts/calendar.
@@ -36,7 +36,8 @@ export function taskCard(event, selected, actions) {
   return card;
 }
 
-/** The tasks list scrolls inside #records on phones and inside the grid on desktop. */
+/** The tasks list scrolls inside #records on phones and inside the grid on desktop.
+ * @param {HTMLElement} host */
 function taskScroller(host) {
   const overflow = getComputedStyle(host).overflowY;
   if (overflow === "auto" || overflow === "scroll" || overflow === "overlay") return host;
@@ -104,47 +105,62 @@ export function renderTasks(host, events, filter, order, selected, collapsed, ac
   if (scroller) scroller.scrollTop = scroll;
 }
 
-/** @param {HTMLElement} host @param {RitmEvent[]} events @param {string} order @param {Actions} actions */
-export function renderReminders(host, events, order, actions) {
-  const top = host.querySelector(".reminder-card, .date-heading") ? host.scrollTop : 0;
+/** @param {RitmEvent} event @param {Actions} actions */
+function reminderCard(event, actions) {
+  const card = el("article", `reminder-card${event.status === "done" ? " is-done" : ""}`);
+  paintObject(card, event);
+  card.dataset.id = String(event.id);
+  const body = el("div", "reminder-card__body");
+  const heading = el("div", "reminder-card__top");
+  heading.append(el("h3", event.status === "done" ? "is-struck" : "", event.title), el("span", "reminder-state", event.status === "done" ? "Завершено" : "Включено"));
+  body.append(heading, el("p", "muted", event.status === "done" ? "Завершено и остаётся в списке" : "Отдельное напоминание"));
+  body.append(checkbox(event, actions));
+  const meta = el("p", "record-meta");
+  meta.append(icon("calendar"), el("span", "", eventMeta(event)));
+  body.append(meta);
+  if (event.time) body.append(el("p", "reminder-card__alarm", event.status === "done" ? "Напоминание завершено" : `Напомню в ${event.time.slice(0, 5)}`));
+  body.append(el("p", "muted", "Уведомления не отправляются"));
+  const timing = el("div", "reminder-card__timing");
+  timing.append(el("span", "eyebrow", event.is_deadline ? "ДО ДЕДЛАЙНА" : "ДО ВРЕМЕНИ ЗАПИСИ"), el("strong", "relative-time", relativeTime(event, clock.now())));
+  const edit = button("", "inline-link", () => actions.open(event));
+  edit.append(el("span", "desktop-only", "Изменить запись →"), el("span", "mobile-only", "Настроить напоминание"));
+  timing.append(edit);
+  card.append(body, timing);
+  return card;
+}
+
+/** @param {HTMLElement} host @param {RitmEvent[]} events @param {string} filter @param {string} order @param {Set<string>} collapsed @param {Actions} actions */
+export function renderReminders(host, events, filter, order, collapsed, actions) {
+  const scroller = taskScroller(host);
+  const scroll = host.querySelector(".task-group") ? scroller?.scrollTop || 0 : 0;
   host.replaceChildren();
-  const now = clock.now();
-  const category = (/** @type {RitmEvent} */ event) => event.status === "done" ? 2 : (eventStart(event)?.getTime() ?? Infinity) < now.getTime() ? 1 : 0;
-  const reminders = sortedEvents(events.filter(event => event.type === "reminder"), order).sort((a, b) => category(a) - category(b));
-  if (!reminders.length) host.append(empty("Напоминаний пока нет. Добавьте запись с датой и временем."));
-  let group = "";
-  let lastCategory = -1;
-  for (const event of reminders) {
-    if (category(event) !== lastCategory) {
-      lastCategory = category(event); group = "";
-      host.append(el("h2", "date-heading", ["Предстоящие", "Прошедшие", "Завершённые"][lastCategory]));
+  const grouped = groupReminders(sortedEvents(events, order));
+  for (const key of /** @type {const} */ (["planned", "done"])) {
+    if (filter !== "all" && filter !== key) continue;
+    const section = el("section", `task-group task-group--${key}`);
+    section.dataset.taskGroup = key;
+    const header = button("", "group-heading", () => {
+      if (collapsed.has(key)) collapsed.delete(key); else collapsed.add(key);
+      renderReminders(host, events, filter, order, collapsed, actions);
+      const target = host.querySelector(`[data-task-group="${key}"] .group-heading`); if (target instanceof HTMLElement) target.focus({ preventScroll: true });
+    });
+    const label = key === "planned" ? "Созданные" : "Завершённые";
+    const chevron = icon("chevron"); chevron.classList.add("group-chevron"); chevron.classList.toggle("is-collapsed", collapsed.has(key));
+    header.append(el("strong", "", label), el("span", "muted", String(grouped[key].length)), chevron);
+    header.setAttribute("aria-expanded", String(!collapsed.has(key)));
+    const bar = el("div", "group-bar");
+    const plus = button("", "icon-btn group-add", () => window.dispatchEvent(new CustomEvent("ritm:create", { detail: { type: "reminder" } })));
+    plus.append(icon("plus"));
+    plus.setAttribute("aria-label", "Добавить напоминание");
+    bar.append(header, plus);
+    section.append(bar);
+    if (!collapsed.has(key)) {
+      if (!grouped[key].length) section.append(empty(key === "planned" ? "Напоминаний пока нет. Добавьте запись с датой и временем." : "Здесь появятся завершённые напоминания."));
+      else for (const event of grouped[key]) section.append(reminderCard(event, actions));
     }
-    if (event.date !== group) {
-      group = event.date || "";
-      host.append(el("h2", "date-heading", formatDate(event.date)));
-    }
-    const card = el("article", `reminder-card${event.status === "done" ? " is-done" : ""}`);
-    paintObject(card, event);
-    card.dataset.id = String(event.id);
-    const body = el("div", "reminder-card__body");
-    const top = el("div", "reminder-card__top");
-    top.append(el("h3", event.status === "done" ? "is-struck" : "", event.title), el("span", "reminder-state", event.status === "done" ? "Завершено" : "Включено"));
-    body.append(top, el("p", "muted", event.status === "done" ? "Завершено и остаётся в списке" : "Отдельное напоминание"));
-    body.append(checkbox(event, actions));
-    const meta = el("p", "record-meta");
-    meta.append(icon("calendar"), el("span", "", eventMeta(event)));
-    body.append(meta);
-    if (event.time) body.append(el("p", "reminder-card__alarm", event.status === "done" ? "Напоминание завершено" : `Напомню в ${event.time.slice(0, 5)}`));
-    body.append(el("p", "muted", "Уведомления не отправляются"));
-    const timing = el("div", "reminder-card__timing");
-    timing.append(el("span", "eyebrow", event.is_deadline ? "ДО ДЕДЛАЙНА" : "ДО ВРЕМЕНИ ЗАПИСИ"), el("strong", "relative-time", relativeTime(event, clock.now())));
-    const edit = button("", "inline-link", () => actions.open(event));
-    edit.append(el("span", "desktop-only", "Изменить запись →"), el("span", "mobile-only", "Настроить напоминание"));
-    timing.append(edit);
-    card.append(body, timing);
-    host.append(card);
+    host.append(section);
   }
-  host.scrollTop = top;
+  if (scroller) scroller.scrollTop = scroll;
 }
 
 /** @param {HTMLElement} host @param {RitmEvent[]} events @param {string} date @param {Actions} actions */

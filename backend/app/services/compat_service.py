@@ -13,6 +13,7 @@ from app.models.assistant import AssistantMessage, AssistantProposal
 from app.models.user import User
 from app.repositories import assistant_repository, catalog_repository, color_repository, item_repository
 from app.repositories.item_repository import ItemFilters
+from app.schemas.assistant import AssistantCommand
 from app.schemas.item import ItemCreate, ItemQuery
 from app.schemas.ritm import (
     ColorDefaultResponse,
@@ -32,7 +33,7 @@ from app.schemas.ritm import (
 )
 from app.services import assistant_service, item_service, workspace_service
 from app.services.delete_match import choice_index, resolve_delete
-from app.services.list_phrase import is_command, match_list_phrase
+from app.services.list_phrase import is_command, is_create_phrase, match_list_phrase
 from app.services.text_guard import REFUSAL, ensure_plain, for_model, is_rejected, mask_profanity
 from app.services.item_service import validate_schedule
 from app.services.ritm_map import (
@@ -102,6 +103,35 @@ def _verdict(text: str) -> str | None:
     if key in _NO:
         return "no"
     return None
+
+
+def _asks_to_confirm(reply: str) -> bool:
+    text = reply.casefold()
+    return any(token in text for token in ("?", "хотите", "всё-таки", "все-таки", "подтверд"))
+
+
+def _mentions_title(title: object, *texts: str) -> bool:
+    if not isinstance(title, str):
+        return False
+    key = " ".join(title.split()).casefold()
+    if len(key) < 2:
+        return False
+    return any(key in " ".join(text.split()).casefold() for text in texts if text)
+
+
+def _matching_rejected_create(
+    proposals: list[AssistantProposal], *texts: str
+) -> AssistantProposal | None:
+    matches = [
+        row
+        for row in proposals
+        if row.action == "create"
+        and row.status == "rejected"
+        and _mentions_title(row.payload.get("title"), *texts)
+    ]
+    if not matches:
+        return None
+    return max(matches, key=lambda row: (row.resolved_at or row.created_at, row.id))
 
 
 def _chosen_color(data: MessageRequest, payload: dict | None = None) -> str | None:
@@ -640,8 +670,16 @@ async def set_event_color(
 def _context(messages: list[AssistantMessage], pending: AssistantProposal | None) -> str | None:
     parts: list[str] = []
     if messages:
-        lines = [f"{row.role}: {for_model(row.text)}" for row in messages[-8:]]
+        recent = messages[-8:]
+        lines = [f"{row.role}: {for_model(row.text)}" for row in recent]
         parts.append("Недавний диалог:\n" + "\n".join(lines))
+        last = recent[-1]
+        if last.role == "assistant" and last.kind == "cancelled":
+            parts.append(
+                "Последнее предложение отклонено, запись не создана. "
+                "Если пользователь снова просит создать — action=create и заполни item. "
+                "Не спрашивай подтверждение текстом."
+            )
     if pending is not None:
         parts.append(
             "Незавершённое предложение, ещё не создано: "
@@ -914,7 +952,9 @@ async def handle_message(
     agenda = await assistant_service.agenda_text(session, user, workspace_id=space_id)
     context = "\n".join(part for part in (agenda, dialog) if part)
     command = await assistant_service.interpret(user, spoken, context)
-    if command.action == "create":
+    if command.action == "create" or (
+        command.action == "none" and assistant_service.has_create_fields(command)
+    ):
         return await _handle_create(session, user, conversation.id, request_id, data, command, pending)
     if command.action == "list":
         await assistant_repository.reject_open(session, conversation.id)
@@ -1297,6 +1337,39 @@ async def _handle_create(
     return _reply(kind="created", text=text, request_id=request_id, events=[event], proposal=payload)
 
 
+async def _offer_declined_retry(
+    session: AsyncSession,
+    user: User,
+    conversation_id: int,
+    request_id: str,
+    data: MessageRequest,
+    command: AssistantCommand,
+    pending: AssistantProposal | None,
+) -> ReplyResponse | None:
+    spoken = for_model(data.text)
+    if not is_create_phrase(spoken) or not _asks_to_confirm(command.reply):
+        return None
+    rejected = _matching_rejected_create(
+        await assistant_repository.list_proposals(session, conversation_id),
+        spoken,
+        command.reply,
+    )
+    if rejected is None:
+        return None
+    try:
+        item = _item_from_payload(rejected.payload, user.timezone)
+    except (KeyError, TypeError, Unprocessable):
+        return None
+    synthetic = AssistantCommand(
+        action="create",
+        reply=command.reply,
+        item=item.model_dump(exclude_none=True),
+    )
+    return await _handle_create(
+        session, user, conversation_id, request_id, data, synthetic, pending
+    )
+
+
 async def _handle_none(
     session: AsyncSession,
     user: User,
@@ -1307,6 +1380,12 @@ async def _handle_none(
     pending: AssistantProposal | None,
 ) -> ReplyResponse:
     text = command.reply.strip() or "Уточните запрос"
+    if pending is None:
+        retried = await _offer_declined_retry(
+            session, user, conversation_id, request_id, data, command, pending
+        )
+        if retried is not None:
+            return retried
     color = _chosen_color(data, pending.payload if pending is not None else None)
     if pending is not None or color:
         payload = dict(pending.payload) if pending is not None else proposal_card(

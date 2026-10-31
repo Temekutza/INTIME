@@ -19,6 +19,16 @@ def _stub_llm(monkeypatch: pytest.MonkeyPatch, payload: dict | BaseException) ->
     monkeypatch.setattr("app.services.assistant_service.llm.complete", complete)
 
 
+def _stub_llm_calls(monkeypatch: pytest.MonkeyPatch, payloads: list[dict]) -> None:
+    queue = list(payloads)
+
+    async def complete(_messages: list[dict[str, str]]) -> dict:
+        assert queue, "неожиданный вызов модели"
+        return queue.pop(0)
+
+    monkeypatch.setattr("app.services.assistant_service.llm.complete", complete)
+
+
 def test_compat_health_does_not_need_login(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
@@ -287,6 +297,128 @@ def test_message_requires_confirmation_and_restores_history(
         json={"session_id": "chat-1", "request_id": "msg-yes", "text": "Нет"},
     )
     assert clash.status_code == 409
+
+
+def test_message_none_with_item_still_asks_confirmation(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    _stub_llm(
+        monkeypatch,
+        {
+            "action": "none",
+            "reply": "Хотите создать задачу «Купить телефон» на среду?",
+            "item": {
+                "item_type": "task",
+                "title": "Купить телефон",
+                "due_on": "2026-11-11",
+            },
+        },
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "retry-item",
+            "request_id": "retry-item-1",
+            "text": "Поставь задачу Купить телефон в среду через неделю",
+            "require_confirmation": True,
+        },
+    )
+    assert asked.status_code == 200, asked.text
+    body = asked.json()
+    assert body["kind"] == "confirm"
+    assert body["expecting"] == "confirmation"
+    assert body["suggestions"] == ["Да", "Нет"]
+    assert body["proposal"]["title"] == "Купить телефон"
+    assert body["proposal"]["date"] == "2026-11-11"
+    assert client.get("/api/events").json()["events"] == []
+
+
+def test_message_retries_declined_create_when_model_only_asks(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    _stub_llm_calls(
+        monkeypatch,
+        [
+            {
+                "action": "create",
+                "reply": "Запишу задачу",
+                "item": {"item_type": "task", "title": "Купить телефон", "due_on": "2026-11-12"},
+            },
+            {
+                "action": "none",
+                "reply": "Вы уже отклонили эту задачу ранее. Хотите всё-таки создать задачу «Купить телефон» на среду следующей недели?",
+            },
+        ],
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "retry-ask",
+            "request_id": "retry-ask-1",
+            "text": "Поставь задачу Купить телефон",
+            "require_confirmation": True,
+        },
+    )
+    assert asked.json()["kind"] == "confirm"
+    cancelled = client.post(
+        "/api/message",
+        json={"session_id": "retry-ask", "request_id": "retry-ask-no", "text": "Нет"},
+    )
+    assert cancelled.json()["kind"] == "cancelled"
+
+    asked_again = client.post(
+        "/api/message",
+        json={
+            "session_id": "retry-ask",
+            "request_id": "retry-ask-2",
+            "text": "Поставь задачу Купить телефон в среду через неделю",
+            "require_confirmation": True,
+        },
+    )
+    assert asked_again.status_code == 200, asked_again.text
+    body = asked_again.json()
+    assert body["kind"] == "confirm"
+    assert body["expecting"] == "confirmation"
+    assert body["suggestions"] == ["Да", "Нет"]
+    assert body["proposal"]["title"] == "Купить телефон"
+    assert body["proposal"]["date"] == "2026-11-12"
+    assert client.get("/api/events").json()["events"] == []
+
+    created = client.post(
+        "/api/message",
+        json={"session_id": "retry-ask", "request_id": "retry-ask-yes", "text": "Да"},
+    )
+    assert created.json()["kind"] == "created"
+    events = client.get("/api/events").json()["events"]
+    assert len(events) == 1
+    assert events[0]["title"] == "Купить телефон"
+
+
+def test_message_none_without_item_stays_info(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    _stub_llm(
+        monkeypatch,
+        {"action": "none", "reply": "Уточните, что записать"},
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "none-info",
+            "request_id": "none-info-1",
+            "text": "запиши что-нибудь",
+            "require_confirmation": True,
+        },
+    )
+    assert asked.status_code == 200, asked.text
+    body = asked.json()
+    assert body["kind"] == "info"
+    assert body["suggestions"] == []
+    assert body["proposal"] is None
+    assert client.get("/api/events").json()["events"] == []
 
 
 def test_message_update_waits_for_confirmation(

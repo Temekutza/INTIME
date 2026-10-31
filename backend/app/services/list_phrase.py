@@ -5,11 +5,13 @@ from zoneinfo import ZoneInfo
 
 from app.schemas.item import ItemRead
 
-_COMMAND = re.compile(
-    r"\b(запиш\w*|записат\w*|постав\w*|созда\w*|добав\w*|напомни(?!а)\w*|"
-    r"запланир\w*|назнач\w*|удал\w*|убер\w*|сотр\w*|перенес\w*|измен\w*|"
-    r"передвин\w*|помен\w*)\b"
+_CREATE_VERBS = (
+    r"запиш\w*|записат\w*|постав\w*|созда\w*|добав\w*|напомни(?!а)\w*|"
+    r"запланир\w*|назнач\w*"
 )
+_MUTATE_VERBS = r"удал\w*|убер\w*|сотр\w*|перенес\w*|измен\w*|передвин\w*|помен\w*"
+_COMMAND = re.compile(rf"\b({_CREATE_VERBS}|{_MUTATE_VERBS})\b")
+_CREATE = re.compile(rf"\b({_CREATE_VERBS})\b")
 _CUE = r"(какие|какой|какая|какое|что|покажи|показать|список|есть|мои|мой|моя|расскажи|глянь|подскажи)"
 _TIME = (
     r"(сегодня|завтра|послезавтра|понедельник\w*|вторник\w*|сред\w*|четверг\w*|"
@@ -41,6 +43,10 @@ class ListPhrase:
 
 def is_command(text: str) -> bool:
     return _COMMAND.search(_norm(text)) is not None
+
+
+def is_create_phrase(text: str) -> bool:
+    return _CREATE.search(_norm(text)) is not None
 
 
 def mentioned_day(text: str, now: datetime) -> date | None:

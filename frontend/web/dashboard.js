@@ -34,6 +34,8 @@ const searchInput = input("search-input");
 const searchStatus = element("search-status");
 const searchList = element("search-list");
 const collapsed = new Set();
+/** @type {{ tasks: string, reminders: string }} */
+const statusFilter = { tasks: "all", reminders: "all" };
 /** @type {import('./lib/types').View} */
 let view = "tasks";
 let chatRequests = 0;
@@ -96,7 +98,10 @@ async function openEvent(event) {
   }
   if (event.date) input("calendar-date").value = event.date;
   if (event.status === "done") collapsed.delete("done");
-  if (select("status-filter").value !== "all" && select("status-filter").value !== event.status) select("status-filter").value = "all";
+  if (select("status-filter").value !== "all" && select("status-filter").value !== event.status) {
+    select("status-filter").value = "all";
+    if (view === "tasks" || view === "reminders") statusFilter[view] = "all";
+  }
   grid.classList.add("has-editor");
   render();
 }
@@ -194,9 +199,11 @@ function render() {
   element("view-title").textContent = view === "calendar" ? calendarTitle : titles[view];
   grid.classList.toggle("calendar-inspector", view === "calendar");
   const done = tasks.filter(event => event.status === "done").length;
-  element("view-description").textContent = view === "tasks" ? `${tasks.length - done} открытых  ${done} завершённых` : view === "reminders" ? "Отдельные записи с датой и временем  без доставки уведомлений" : "Задачи, встречи и напоминания в одном календаре";
+  const doneReminders = reminders.filter(event => event.status === "done").length;
+  element("view-description").textContent = view === "tasks" ? `${tasks.length - done} открытых  ${done} завершённых` : view === "reminders" ? `${reminders.length - doneReminders} открытых  ${doneReminders} завершённых` : "Задачи, встречи и напоминания в одном календаре";
   element("add-label").textContent = view === "tasks" ? "Добавить задачу" : view === "reminders" ? "Добавить напоминание" : "Добавить встречу";
-  element("task-filters").hidden = view !== "tasks";
+  element("task-filters").hidden = view !== "tasks" && view !== "reminders";
+  syncStatusFilter(view);
   element("calendar-controls").hidden = view !== "calendar";
   element("sort-order").closest(".sort-control")?.toggleAttribute("hidden", view === "calendar" && calendarLayout !== "list");
   if (view === "calendar") pageHeading?.append(element("calendar-controls"));
@@ -218,7 +225,7 @@ function render() {
   if (!store.loaded) {
     records.replaceChildren(empty(store.loading ? "Загружаем ваши планы…" : "Не удалось загрузить записи. Повторите попытку."));
   }   else if (view === "tasks") renderTasks(records, store.events, select("status-filter").value, select("sort-order").value, editor.id, collapsed, actions);
-  else if (view === "reminders") renderReminders(records, store.events, select("sort-order").value, actions);
+  else if (view === "reminders") renderReminders(records, store.events, select("status-filter").value, select("sort-order").value, collapsed, actions);
   else if (mobileAgenda) renderMobileAgenda(records, store.events, input("calendar-date").value, selectCalendarEvent, date => { input("calendar-date").value = date; render(); });
   else if (calendarLayout !== "list") renderCalendarView(records, store.events, input("calendar-date").value, calendarLayout, selectCalendarEvent, date => { input("calendar-date").value = date; calendarLayout = "day"; render(); });
   else renderCalendar(records, store.events, input("calendar-date").value, { ...actions, open: selectCalendarEvent }, select("sort-order").value);
@@ -264,7 +271,18 @@ function render() {
   }
   renderSync();
   enhanceFields();
-  if (view === "tasks") grid.scrollTop = previousWorkspaceScroll;
+  if (view === "tasks" || view === "reminders") grid.scrollTop = previousWorkspaceScroll;
+}
+
+/** @param {import('./lib/types').View} currentView */
+function syncStatusFilter(currentView) {
+  const control = select("status-filter");
+  const remindersView = currentView === "reminders";
+  const caption = remindersView ? "Статус напоминаний" : "Статус задач";
+  const label = document.querySelector('label[for="status-filter"]');
+  if (label) label.textContent = caption;
+  control.options[0].text = remindersView ? "Все напоминания" : "Все задачи";
+  if (currentView === "tasks" || currentView === "reminders") control.value = statusFilter[currentView];
 }
 
 async function search() {
@@ -346,7 +364,11 @@ element("add-button").addEventListener("click", () => creation.open(view === "ta
 document.querySelectorAll("[data-prompt]").forEach(node => node.addEventListener("click", () => {
   if (node instanceof HTMLElement) compose(node.dataset.prompt || "");
 }));
-for (const id of ["status-filter", "sort-order", "calendar-date"]) element(id).addEventListener("change", render);
+element("status-filter").addEventListener("change", () => {
+  if (view === "tasks" || view === "reminders") statusFilter[view] = select("status-filter").value;
+  render();
+});
+for (const id of ["sort-order", "calendar-date"]) element(id).addEventListener("change", render);
 input("calendar-date").value = currentDay;
 element("calendar-today").addEventListener("click", () => { input("calendar-date").value = isoDay(clock.now()); render(); });
 /** @param {string | undefined} next */

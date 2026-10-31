@@ -48,6 +48,8 @@ class StyledSelect {
     mark.setAttribute("aria-hidden", "true");
     this.trigger.replaceChildren(el("span", "", this.control.selectedOptions[0]?.textContent || "Выберите"), mark);
     this.trigger.disabled = this.control.disabled; this.trigger.title = this.control.title;
+    this.trigger.setAttribute("aria-label", labelOf(this.control));
+    this.panel.setAttribute("aria-label", labelOf(this.control));
   }
   /** @param {number} [focusIndex] */
   open(focusIndex) {

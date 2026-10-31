@@ -3,7 +3,13 @@ from pydantic import ValidationError
 
 from app.core.errors import Unprocessable
 from app.schemas.assistant import AssistantCommand, AssistantMessageRequest
-from app.services.assistant_service import _create_payload, _query, _update_payload, command_creates
+from app.services.assistant_service import (
+    _create_payload,
+    _query,
+    _update_payload,
+    command_creates,
+    has_create_fields,
+)
 
 
 def test_assistant_request_strips_text() -> None:
@@ -52,6 +58,23 @@ def test_query_maps_from_to_filters() -> None:
     assert query.status == "todo"
     assert query.q == "молоко"
     assert query.limit == 50
+
+
+def test_has_create_fields_reads_item_or_items() -> None:
+    empty = AssistantCommand.model_validate({"action": "none", "reply": "уточните"})
+    assert has_create_fields(empty) is False
+    with_item = AssistantCommand.model_validate(
+        {"action": "none", "reply": "создать?", "item": {"item_type": "task", "title": "Молоко"}}
+    )
+    assert has_create_fields(with_item) is True
+    with_items = AssistantCommand.model_validate(
+        {"action": "none", "items": [{"item_type": "task", "title": "Молоко"}]}
+    )
+    assert has_create_fields(with_items) is True
+    untitled = AssistantCommand.model_validate(
+        {"action": "none", "item": {"item_type": "task", "title": "  "}}
+    )
+    assert has_create_fields(untitled) is False
 
 
 def test_command_creates_keeps_three_records() -> None:

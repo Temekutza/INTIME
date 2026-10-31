@@ -149,6 +149,7 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; min-height: 130px; padding: 24px; color: var(--ink-muted); font-size: var(--text-sm); border: 1px dashed var(--line-strong); border-radius: var(--radius); }
 .empty-state .icon { color: var(--task); }
 .date-heading { margin: 14px 0 12px; font-size: var(--text-sm); font-weight: 600; }
+.calendar-inspector .date-heading { margin: 14px 16px 8px; }
 .reminder-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(155px, .34fr); gap: 18px; padding: 20px; background: var(--object-tint, var(--surface)); border-radius: var(--radius); margin-bottom: 16px; }
 .reminder-card__body { border-left: 3px solid var(--object-color, var(--reminder)); padding-left: 16px; min-width: 0; overflow-wrap: anywhere; }
 .reminder-card h3 { font-size: var(--text-lg); font-weight: 600; margin-bottom: 8px; }
@@ -184,9 +185,9 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 .editor-actions .btn { flex: 1 1 auto; font-size: var(--text-xs); }
 .editor-actions .btn-primary { flex-basis:100%; }
 .editor-actions .btn-danger { flex:0 0 auto; }
-.calendar-row { display: flex; align-items: flex-start; gap: 14px; padding: 16px 0; border-bottom: 1px solid var(--line); }
-.calendar-row__time { font-size: var(--text-sm); width: 65px; flex: 0 0 auto; }
-.calendar-row > .icon { color: var(--accent); }
+.calendar-row { display: grid; grid-template-columns: 76px 18px minmax(0, 1fr); align-items: start; column-gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.calendar-row__time { font-size: var(--text-sm); width: auto; min-width: 0; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: left; color: var(--ink-secondary); line-height: 20px; }
+.calendar-row > .icon { color: var(--accent); margin-top: 1px; }
 .calendar-row__content { display: flex; flex-direction: column; gap: 4px; text-align: left; min-width: 0; overflow-wrap: anywhere; }
 .assistant-panel { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--assistant-bg); border-left: 1px solid var(--line); }
 .assistant-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; min-height:52px; padding:8px 16px; }
@@ -203,7 +204,7 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 .composer-box:focus-within { border-color: var(--accent); }
 .composer-box.is-listening { border-color: var(--danger-strong); box-shadow: 0 0 0 3px rgb(181 55 72 / 16%); }
 #message-input { width: 100%; min-height: 34px; max-height: 160px; resize: none; border: 0; border-radius: 0; padding: 0 1px; background: transparent; font-size: var(--text-sm); line-height: 1.6;  box-shadow: none; }
-#message-input:focus, #message-input:focus-visible {  box-shadow: none; border: 0; }
+#message-input:focus, #message-input:focus-visible { box-shadow: none; border: 0; outline: none; }
 #message-input::placeholder { color: var(--ink-placeholder); }
 #message-input.is-interim { font-style: italic; color: var(--ink-secondary); }
 #send-button { background: var(--accent); color: var(--on-accent); }
@@ -397,11 +398,11 @@ html, body { overflow: hidden; }
 #calendar-controls .icon-btn { font-size:22px; }
 .editor-title { resize:none; }
 .editor-actions { flex-wrap:wrap; }
-.tasks-page .view-toolbar { margin-bottom:12px; }
-.tasks-page .content-grid { overflow:auto; align-items:start; scrollbar-gutter:stable; padding:2px 6px 12px 2px; }
-.tasks-page .content-grid.has-editor { grid-template-columns:minmax(280px,1fr) minmax(300px,.68fr); gap:18px; }
-.tasks-page .records { overflow:visible; padding:0 2px 8px 0; scrollbar-gutter:auto; }
-.tasks-page #event-editor { position:sticky; top:var(--editor-sticky-top,0px); align-self:start; overflow:visible; padding:16px; }
+.tasks-page .view-toolbar, .reminders-page .view-toolbar { margin-bottom:12px; }
+.tasks-page .content-grid, .reminders-page .content-grid { overflow:auto; align-items:start; scrollbar-gutter:stable; padding:2px 6px 12px 2px; }
+.tasks-page .content-grid.has-editor, .reminders-page .content-grid.has-editor { grid-template-columns:minmax(280px,1fr) minmax(300px,.68fr); gap:18px; }
+.tasks-page .records, .reminders-page .records { overflow:visible; padding:0 2px 8px 0; scrollbar-gutter:auto; }
+.tasks-page #event-editor, .reminders-page #event-editor { position:sticky; top:var(--editor-sticky-top,0px); align-self:start; overflow:visible; padding:16px; }
 .group-chevron.icon { width:15px; height:15px; transition:transform .12s; }
 .group-chevron.is-collapsed { transform:rotate(-90deg); }
 .task-pagination { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:12px 0 18px; font-size:12px; }
@@ -641,7 +642,7 @@ html, body { overflow: hidden; }
   .type-legend__item { display: inline-flex; align-items: center; gap: 6px; }
   .type-legend__item::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--legend-color, var(--task)); }
 
-  .content-grid, .tasks-page .content-grid { display: flex; flex-direction: column; overflow: hidden; min-height: 0; flex: 1 1 auto; padding: 0; align-items: stretch; }
+  .content-grid, .tasks-page .content-grid, .reminders-page .content-grid { display: flex; flex-direction: column; overflow: hidden; min-height: 0; flex: 1 1 auto; padding: 0; align-items: stretch; }
   .tasks-page .records,
   .reminders-page .records,
   .calendar-page .records,

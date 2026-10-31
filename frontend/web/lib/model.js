@@ -61,12 +61,22 @@ export function sortedEvents(events, direction = "asc") {
   });
 }
 
+/** @param {readonly RitmEvent[]} events @param {RitmEvent['type']} type */
+function groupByStatus(events, type) {
+  return {
+    planned: events.filter(event => event.type === type && event.status === "planned"),
+    done: events.filter(event => event.type === type && event.status === "done"),
+  };
+}
+
 /** @param {readonly RitmEvent[]} events */
 export function groupTasks(events) {
-  return {
-    planned: events.filter(event => event.type === "task" && event.status === "planned"),
-    done: events.filter(event => event.type === "task" && event.status === "done"),
-  };
+  return groupByStatus(events, "task");
+}
+
+/** @param {readonly RitmEvent[]} events */
+export function groupReminders(events) {
+  return groupByStatus(events, "reminder");
 }
 
 /** @param {Pick<RitmEvent, 'type'>} event @param {string} title @param {string} date @param {string} time @param {string} status */

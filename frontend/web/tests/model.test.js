@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { eventMeta, groupTasks, isoDay, relativeTime, sortedEvents, validatePatch } from "../lib/model.js";
+import { eventMeta, groupReminders, groupTasks, isoDay, relativeTime, sortedEvents, validatePatch } from "../lib/model.js";
 import { isEvent, isWorkspace, listEvents, listWorkspaces, patchEvent, searchEvents } from "../lib/api.js";
 
 export const event = (id = 1, extra = {}) => ({
@@ -35,6 +35,16 @@ test("sort is stable, does not mutate input, and leaves undated entries last", (
 
 test("groups use only real task statuses", () => {
   const groups = groupTasks([event(), event(2, { status: "done" }), event(3, { type: "meeting" })]);
+  assert.deepEqual(groups.planned.map(e => e.id), [1]);
+  assert.deepEqual(groups.done.map(e => e.id), [2]);
+});
+
+test("reminder groups split planned and done like tasks", () => {
+  const groups = groupReminders([
+    event(1, { type: "reminder" }),
+    event(2, { type: "reminder", status: "done" }),
+    event(3, { type: "task" }),
+  ]);
   assert.deepEqual(groups.planned.map(e => e.id), [1]);
   assert.deepEqual(groups.done.map(e => e.id), [2]);
 });

@@ -1,0 +1,36 @@
+# OpenAI-compatible gateway для системной Ollama.
+# Секреты только из окружения контейнера, не из этого файла.
+
+model_list:
+  - model_name: qwen3-32b
+    litellm_params:
+      # Алиас из llm/gateway/Modelfile.qwen3, веса те же, что у hf.co/Qwen/Qwen3-32B-GGUF:Q5_K_M.
+      model: ollama_chat/intime-qwen3-32b
+      api_base: http://127.0.0.1:11435
+      timeout: 600
+      stream_timeout: 600
+      # Q5_K_M занимает около 23 ГБ из 24 ГБ RTX 4090. Короткий контекст
+      # оставляет место под KV-cache и рабочий стол, без смены настроек Ollama.
+      num_ctx: 2048
+      # Qwen3 по умолчанию пишет цепочку рассуждений. Для chat/completions нужен ответ.
+      think: false
+      # Один GPU не тянет очередь из нескольких тяжёлых запросов.
+      rpm: 6
+    model_info:
+      mode: chat
+
+litellm_settings:
+  request_timeout: 600
+  drop_params: true
+  num_retries: 0
+  set_verbose: false
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: false
+  store_prompts_in_spend_logs: false
+  allow_requests_on_db_unavailable: false
+
+router_settings:
+  num_retries: 0

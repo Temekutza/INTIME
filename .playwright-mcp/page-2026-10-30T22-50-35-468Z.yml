@@ -1,0 +1,12 @@
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - heading "Проверка голоса" [level=1] [ref=e5]
+      - paragraph [ref=e6]: Запись уходит в локальный GigaAM. Ответ модели — сообщение в чате.
+    - link "К приложению" [ref=e7] [cursor=pointer]:
+      - /url: /
+  - paragraph [ref=e9]: Нажмите «Говорить», скажите фразу и нажмите «Стоп». Либо выберите готовый аудиофайл.
+  - generic [ref=e10]:
+    - status [ref=e11]
+    - generic [ref=e12] [cursor=pointer]: Файл
+    - button "Говорить" [ref=e13] [cursor=pointer]

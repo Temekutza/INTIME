@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_session
 from app.core.security import COOKIE_NAME
+from app.models.user import User
 from app.schemas.auth import AuthResponse, LoginRequest, RegisterRequest, UserRead
 from app.services import auth_service
 from app.services.auth_service import IssuedSession
@@ -14,7 +15,7 @@ from app.services.auth_service import IssuedSession
 router = APIRouter()
 
 
-def _user_read(user) -> UserRead:
+def _user_read(user: User) -> UserRead:
     return UserRead(
         id=user.id,
         login=user.login,

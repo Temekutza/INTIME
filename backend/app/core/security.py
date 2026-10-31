@@ -6,12 +6,14 @@ from typing import Annotated
 from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pwdlib import PasswordHash
+from pwdlib.exceptions import PwdlibError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_session
 from app.core.errors import Unauthorized
 from app.models.user import User
+from app.repositories import user_repository
 
 _hasher = PasswordHash.recommended()
 _bearer = HTTPBearer(auto_error=False)
@@ -25,7 +27,7 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, password_hash: str) -> bool:
     try:
         return _hasher.verify(password, password_hash)
-    except Exception:
+    except PwdlibError:
         return False
 
 
@@ -56,9 +58,7 @@ async def get_current_user(
     token = token_from_request(request, credentials)
     if not token:
         raise Unauthorized("Требуется вход")
-    from app.services.auth_service import user_from_token
-
-    user = await user_from_token(session, token)
+    user = await user_repository.get_by_token_hash(session, hash_token(token))
     if user is None:
         raise Unauthorized("Требуется вход")
     return user

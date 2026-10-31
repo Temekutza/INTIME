@@ -1,4 +1,4 @@
-# Aivritm2
+# InTime
 
 FastAPI, PostgreSQL и статическая заглушка фронтенда. Всё поднимается через Docker Compose.
 

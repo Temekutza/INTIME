@@ -1,0 +1,16 @@
+{
+  "name": "intime-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint dashboard.js lib tests app.js",
+    "test": "node --test tests/model.test.js tests/store.test.js tests/colors.test.js tests/profanity.test.js tests/capture.test.js",
+    "test:e2e": "playwright test -c tests/playwright.config.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "eslint": "10.0.3",
+    "typescript": "6.0.2"
+  }
+}

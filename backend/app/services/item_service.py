@@ -10,6 +10,7 @@ from app.models.user import User
 from app.repositories import catalog_repository, item_repository
 from app.repositories.item_repository import ItemFilters
 from app.schemas.item import ItemCreate, ItemList, ItemQuery, ItemRead, ItemUpdate
+from app.services.text_guard import ensure_plain
 
 DEFAULT_STATUS = {
     "task": "todo",
@@ -55,6 +56,7 @@ def validate_schedule(
 
 
 async def create_item(session: AsyncSession, user: User, data: ItemCreate) -> ItemRead:
+    ensure_plain(data.title, data.description)
     status_code = data.status or DEFAULT_STATUS[data.item_type]
     status = await catalog_repository.get_status(session, data.item_type, status_code)
     if status is None:
@@ -80,7 +82,6 @@ async def create_item(session: AsyncSession, user: User, data: ItemCreate) -> It
         remind_at=data.remind_at,
     )
     item_repository.add(session, item)
-    await session.flush()
     await persist(session)
     await session.refresh(item)
     return to_read(item, status.code)
@@ -120,6 +121,7 @@ async def update_item(session: AsyncSession, user: User, item_id: int, data: Ite
         raise NotFound("Запись не найдена")
     item, current_status = found
     fields = data.model_dump(exclude_unset=True)
+    ensure_plain(fields.get("title"), fields.get("description"))
     new_type = fields.get("item_type", item.item_type_code)
     if "item_type" in fields and new_type != item.item_type_code and "status" not in fields:
         raise Unprocessable("При смене типа укажите статус нового типа")
@@ -148,7 +150,6 @@ async def update_item(session: AsyncSession, user: User, item_id: int, data: Ite
         due_at=item.due_at,
         remind_at=item.remind_at,
     )
-    await session.flush()
     await persist(session)
     await session.refresh(item)
     return to_read(item, status.code)

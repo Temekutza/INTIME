@@ -72,13 +72,17 @@ def reply_for_filters(found: ItemList, query: ItemQuery, user: User) -> str:
     return list_reply(found, phrase, zone)
 
 
-async def agenda_text(session: AsyncSession, user: User) -> str:
+async def agenda_text(
+    session: AsyncSession, user: User, workspace_id: int | None = None
+) -> str:
     zone = ZoneInfo(user.timezone)
     now = local_now(user)
     start = datetime.combine(now.date(), datetime.min.time(), tzinfo=zone)
     end = start + timedelta(days=14) - timedelta(seconds=1)
     found = await item_service.list_items(
-        session, user, ItemQuery(start=start, end=end, limit=15, offset=0)
+        session,
+        user,
+        ItemQuery(start=start, end=end, limit=15, offset=0, workspace_id=workspace_id),
     )
     if not found.items:
         return "Записи из базы на ближайшие 14 дней: нет."

@@ -39,6 +39,7 @@ async def list_items(
     end: Annotated[datetime | None, Query(alias="to")] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> ItemList:
     query = ItemQuery(
         item_type=item_type,
@@ -48,6 +49,7 @@ async def list_items(
         end=_aware(end, "to"),
         limit=limit,
         offset=offset,
+        workspace_id=workspace_id,
     )
     return await item_service.list_items(session, user, query)
 

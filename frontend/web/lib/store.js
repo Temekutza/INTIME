@@ -10,6 +10,8 @@ export class EventStore extends EventTarget {
   error = "";
   /** @type {Set<number>} */
   saving = new Set();
+  /** @type {number | null} */
+  workspaceId = null;
   revision = 0;
   /** @type {Promise<void> | null} */
   flight = null;
@@ -26,7 +28,7 @@ export class EventStore extends EventTarget {
     const revision = this.revision;
     this.flight = (async () => {
       try {
-        const events = await listEvents();
+        const events = await listEvents(undefined, this.workspaceId);
         if (this.revision === revision) { this.events = events; this.loaded = true; }
         else this.reloadAfterFlight = true;
       } catch (error) {

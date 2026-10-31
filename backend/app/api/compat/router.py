@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.compat.deps import CompatUser
 from app.api.v1.health import readiness_response
 from app.core.database import get_session
+from app.schemas.workspace import WorkspaceCreate, WorkspaceList, WorkspaceRead, WorkspaceUpdate
 from app.schemas.ritm import (
     ColorBody,
     ColorDefaultResponse,
@@ -24,9 +25,36 @@ from app.schemas.ritm import (
     SearchResponse,
     TranscriptionOut,
 )
-from app.services import compat_service
+from app.services import compat_service, workspace_service
 
 router = APIRouter()
+
+
+@router.get("/workspaces", response_model=WorkspaceList)
+async def list_workspaces(
+    user: CompatUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> WorkspaceList:
+    return await workspace_service.list_workspaces(session, user)
+
+
+@router.post("/workspaces", response_model=WorkspaceRead, status_code=201)
+async def create_workspace(
+    data: WorkspaceCreate,
+    user: CompatUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> WorkspaceRead:
+    return await workspace_service.create_workspace(session, user, data)
+
+
+@router.patch("/workspaces/{workspace_id}", response_model=WorkspaceRead)
+async def update_workspace(
+    workspace_id: int,
+    data: WorkspaceUpdate,
+    user: CompatUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> WorkspaceRead:
+    return await workspace_service.rename_workspace(session, user, workspace_id, data)
 
 
 @router.get("/health")
@@ -40,8 +68,11 @@ async def list_events(
     session: Annotated[AsyncSession, Depends(get_session)],
     type: Annotated[EventType | None, Query()] = None,
     status: Annotated[EventStatus | None, Query()] = None,
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> EventListResponse:
-    return await compat_service.list_events(session, user, item_type=type, status=status)
+    return await compat_service.list_events(
+        session, user, item_type=type, status=status, workspace_id=workspace_id
+    )
 
 
 @router.post("/events", response_model=ReplyResponse)
@@ -98,8 +129,9 @@ async def search_events(
     session: Annotated[AsyncSession, Depends(get_session)],
     q: Annotated[str, Query(max_length=200)] = "",
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> SearchResponse:
-    return await compat_service.search_events(session, user, q, limit)
+    return await compat_service.search_events(session, user, q, limit, workspace_id)
 
 
 @router.get("/colors", response_model=ColorSnapshot)

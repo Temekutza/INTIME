@@ -4,9 +4,45 @@
 Описание набора — в testdescription.md, его нужно обновлять вместе с этим файлом.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
+
+DEFAULT_WORKSPACE = "Общее пространство"
+WORK_WORKSPACE = "Работа"
+PERSONAL_WORKSPACE = "Личное"
+ANNA_WORKSPACES = (WORK_WORKSPACE, PERSONAL_WORKSPACE)
+ANNA_WORK_TITLES = frozenset(
+    {
+        "Сдать отчёт",
+        "Позвонить клиенту",
+        "Подготовить слайды",
+        "Переезд сервера",
+        "Стендап",
+        "Демо заказчику",
+        "Планёрка",
+        "Созвон с подрядчиком",
+        "Воркшоп",
+        "Дежурство",
+        "Быстрый вопрос",
+        "Ретроспектива",
+        "Забрать пропуск",
+    }
+)
+ANNA_PERSONAL_TITLES = frozenset(
+    {
+        "Оплатить интернет",
+        "Записаться к врачу",
+        "Разобрать почту",
+        "Черновик статьи",
+        "Налоги",
+        "Старый черновик",
+        "Позвонить маме",
+        "Оплатить парковку",
+        "Отменить подписку",
+        "Продлить домен",
+    }
+)
 
 PASSWORD = "testpass"
 
@@ -33,6 +69,7 @@ class Item:
     color: str | None = None
     completed_at: datetime | None = None
     deleted_at: datetime | None = None
+    workspace: str | None = None
 
 
 @dataclass(frozen=True)
@@ -65,6 +102,7 @@ class UserFixture:
     items: tuple[Item, ...]
     type_colors: tuple[tuple[str, str], ...] = ()
     conversation: Conversation | None = None
+    extra_workspaces: tuple[str, ...] = ()
 
 
 def build(now: datetime) -> tuple[UserFixture, ...]:
@@ -76,6 +114,7 @@ def build(now: datetime) -> tuple[UserFixture, ...]:
             _anna(now),
             type_colors=(("meeting", "#3d7a62"),),
             conversation=_anna_chat(now),
+            extra_workspaces=ANNA_WORKSPACES,
         ),
         UserFixture(
             User("boris", "boris@example.com", "Asia/Yekaterinburg"),
@@ -99,7 +138,7 @@ def _at(day: date, hour: int, minute: int, timezone: str) -> datetime:
 def _anna(now: datetime) -> tuple[Item, ...]:
     tz = "Europe/Moscow"
     today = _day(now, tz)
-    return (
+    items = (
         Item("task", "todo", "Купить молоко", priority="medium"),
         Item(
             "task",
@@ -270,6 +309,15 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             remind_at=_at(_day(now, tz, 14), 8, 0, tz),
         ),
     )
+    tagged = []
+    for item in items:
+        if item.title in ANNA_WORK_TITLES:
+            tagged.append(replace(item, workspace=WORK_WORKSPACE))
+        elif item.title in ANNA_PERSONAL_TITLES:
+            tagged.append(replace(item, workspace=PERSONAL_WORKSPACE))
+        else:
+            tagged.append(replace(item, workspace=DEFAULT_WORKSPACE))
+    return tuple(tagged)
 
 
 def _boris(now: datetime) -> tuple[Item, ...]:

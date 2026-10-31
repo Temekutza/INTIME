@@ -5,6 +5,7 @@ import { button, el, element, empty, icon, input, select } from "./lib/ui.js";
 import { clock, eventMeta, isoDay } from "./lib/model.js";
 import { renderCalendar, renderCalendarGridStub, renderDay, renderReminders, renderTasks } from "./lib/views.js";
 import { searchEvents } from "./lib/api.js";
+import { workspaceStore } from "./lib/workspace.js";
 import { colorStore } from "./lib/colors.js";
 import { setupColorSettings } from "./lib/color-settings.js";
 import { CreateEventDialog } from "./lib/create-event.js";
@@ -163,7 +164,7 @@ async function search() {
   searchList.replaceChildren();
   searchController = new AbortController();
   try {
-    const hits = await searchEvents(query, searchController.signal);
+    const hits = await searchEvents(query, searchController.signal, store.workspaceId);
     if (generation !== searchGeneration) return;
     searchStatus.textContent = hits.length ? `${hits.length} найдено · не более 20 результатов` : "Ничего не найдено. Попробуйте другой запрос.";
     for (const event of hits) {
@@ -266,9 +267,91 @@ window.addEventListener("pageshow", event => { if (event.persisted) { stopped = 
 window.addEventListener("beforeunload", event => {
   if (editor.dirty || editor.busy || colorStore.busy || creation.busy || creation.dialog.open && creation.dirty) { event.preventDefault(); event.returnValue = true; }
 });
+function fillWorkspaceSelect() {
+  const node = select("workspace-select");
+  const current = workspaceStore.currentId;
+  node.replaceChildren();
+  for (const space of workspaceStore.workspaces) {
+    node.append(new Option(space.name, String(space.id), false, space.id === current));
+  }
+  node.disabled = workspaceStore.workspaces.length === 0;
+  node.title = workspaceStore.error || "Пространство";
+  enhanceFields();
+}
+
+function openWorkspaceCreate() {
+  const dialog = el("dialog", "create-dialog");
+  dialog.setAttribute("aria-labelledby", "workspace-create-title");
+  const heading = el("div", "section-heading");
+  const title = el("h2", "", "Новое пространство"); title.id = "workspace-create-title";
+  const close = button("×", "icon-btn", () => dialog.close());
+  close.setAttribute("aria-label", "Закрыть создание пространства");
+  heading.append(title, close);
+  const form = el("form", "create-form");
+  const name = el("input"); name.id = "workspace-name"; name.required = true; name.maxLength = 80;
+  name.autocomplete = "off"; name.placeholder = "Например, Работа";
+  const field = el("label", "form-field", "Название"); field.htmlFor = name.id; field.append(name);
+  const status = el("p", "create-status"); status.setAttribute("role", "status");
+  const submit = el("button", "btn btn-primary", "Создать"); submit.type = "submit";
+  form.append(field, status, submit);
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    const text = name.value.trim();
+    if (!text) { status.textContent = "Введите название пространства."; return; }
+    submit.disabled = true; name.disabled = true; close.disabled = true;
+    status.textContent = "Сохранение…"; status.classList.remove("is-danger");
+    try {
+      const created = await workspaceStore.create(text);
+      store.workspaceId = created.id;
+      store.revision += 1;
+      fillWorkspaceSelect();
+      dialog.close();
+      await store.load();
+      element("live-status").textContent = "Создано пространство: " + created.name;
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : "Не удалось создать пространство.";
+      status.classList.add("is-danger");
+    } finally {
+      submit.disabled = false; name.disabled = false; close.disabled = false;
+    }
+  });
+  dialog.addEventListener("close", () => dialog.remove());
+  dialog.append(heading, form);
+  document.body.append(dialog);
+  dialog.showModal();
+  name.focus();
+}
+
+/** @param {number} id */
+async function applyWorkspace(id) {
+  if (id === workspaceStore.currentId) return;
+  if (editor.id !== null && !await editor.close()) {
+    fillWorkspaceSelect();
+    return;
+  }
+  workspaceStore.select(id);
+  store.workspaceId = id;
+  store.revision += 1;
+  await store.load();
+}
+
+select("workspace-select").addEventListener("change", () => {
+  const id = Number(select("workspace-select").value);
+  if (!Number.isSafeInteger(id)) return;
+  void applyWorkspace(id);
+});
+element("workspace-add").addEventListener("click", () => openWorkspaceCreate());
+
+async function boot() {
+  await workspaceStore.load();
+  store.workspaceId = workspaceStore.currentId;
+  fillWorkspaceSelect();
+  await store.load();
+}
+
 try { toggleAssistant(localStorage.getItem("ritm.assistant-hidden") === "true", false); } catch { /* storage optional */ }
 tick();
 setupColorSettings();
 setupDayPanel();
-void store.load();
+void boot();
 void colorStore.load();

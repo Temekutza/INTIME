@@ -19,12 +19,13 @@ from datetime import datetime, timezone
 import psycopg
 from psycopg.types.json import Json
 
-from dataset import PASSWORD, Item, UserFixture, build
+from dataset import DEFAULT_WORKSPACE, PASSWORD, Item, UserFixture, build
 from db import database_url, describe_url
 
 INSERT_ITEM = """
     INSERT INTO planner_items (
         user_id,
+        workspace_id,
         item_type_code,
         status_id,
         title,
@@ -42,6 +43,7 @@ INSERT_ITEM = """
     VALUES (
         %s,
         %s,
+        %s,
         (
             SELECT id
             FROM item_statuses
@@ -51,6 +53,40 @@ INSERT_ITEM = """
     )
     RETURNING id
 """
+
+
+def _workspace_ids(cur, user_id: int, extra_names: tuple[str, ...]) -> dict[str, int]:
+    cur.execute(
+        "SELECT id, name FROM workspaces WHERE user_id = %s",
+        (user_id,),
+    )
+    found = {str(name): int(row_id) for row_id, name in cur.fetchall()}
+    if DEFAULT_WORKSPACE not in found:
+        raise RuntimeError("У пользователя нет пространства по умолчанию")
+    for name in extra_names:
+        if name in found:
+            continue
+        cur.execute(
+            """
+            INSERT INTO workspaces (user_id, name, is_default)
+            VALUES (%s, %s, FALSE)
+            RETURNING id
+            """,
+            (user_id, name),
+        )
+        row = cur.fetchone()
+        if row is None:
+            raise RuntimeError(f"Не удалось создать пространство {name!r}")
+        found[name] = int(row[0])
+    return found
+
+
+def _item_workspace_id(space_ids: dict[str, int], name: str | None) -> int:
+    key = name or DEFAULT_WORKSPACE
+    workspace_id = space_ids.get(key)
+    if workspace_id is None:
+        raise RuntimeError(f"Нет пространства {key!r} для записи")
+    return workspace_id
 
 
 def dispatch_row(item: Item, now: datetime) -> tuple[str, int, str | None, datetime | None] | None:
@@ -75,11 +111,11 @@ def main() -> None:
 
     with psycopg.connect(url) as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT to_regclass('public.user_type_colors')")
+            cur.execute("SELECT to_regclass('public.workspaces')")
             if cur.fetchone()[0] is None:
                 raise SystemExit(
-                    "Нет таблиц из 003_interface_fields.sql. "
-                    "Для рабочей базы примените backend/sql/003_interface_fields.sql. "
+                    "Нет таблиц из 004_workspaces.sql. "
+                    "Для рабочей базы примените backend/sql/004_workspaces.sql. "
                     "Для изолированной: python scripts/testdatagen/apply_schema.py"
                 )
 
@@ -108,9 +144,10 @@ def main() -> None:
                     (SELECT COUNT(*) FROM assistant_conversations c JOIN users u ON u.id = c.user_id WHERE u.login = ANY(%s)),
                     (SELECT COUNT(*) FROM assistant_messages m JOIN assistant_conversations c ON c.id = m.conversation_id JOIN users u ON u.id = c.user_id WHERE u.login = ANY(%s)),
                     (SELECT COUNT(*) FROM assistant_proposals p JOIN assistant_conversations c ON c.id = p.conversation_id JOIN users u ON u.id = c.user_id WHERE u.login = ANY(%s)),
-                    (SELECT COUNT(*) FROM planner_items p JOIN users u ON u.id = p.user_id WHERE u.login = ANY(%s) AND p.deleted_at IS NOT NULL)
+                    (SELECT COUNT(*) FROM planner_items p JOIN users u ON u.id = p.user_id WHERE u.login = ANY(%s) AND p.deleted_at IS NOT NULL),
+                    (SELECT COUNT(*) FROM workspaces w JOIN users u ON u.id = w.user_id WHERE u.login = ANY(%s))
                 """,
-                (logins, logins, logins, logins, logins, logins),
+                (logins, logins, logins, logins, logins, logins, logins),
             )
             extras = cur.fetchone()
 
@@ -120,7 +157,7 @@ def main() -> None:
     if extras:
         print(
             "  цвета типов: {0}, отправки: {1}, разговоры: {2}, "
-            "сообщения: {3}, предложения: {4}, мягко удалено: {5}".format(*extras)
+            "сообщения: {3}, предложения: {4}, мягко удалено: {5}, пространства: {6}".format(*extras)
         )
 
 
@@ -135,12 +172,14 @@ def _insert_fixture(cur, fixture: UserFixture, password_hash: str, now: datetime
         (user.login, password_hash, user.email, user.timezone),
     )
     user_id = cur.fetchone()[0]
+    space_ids = _workspace_ids(cur, user_id, fixture.extra_workspaces)
     titles: dict[str, int] = {}
     for item in fixture.items:
         cur.execute(
             INSERT_ITEM,
             (
                 user_id,
+                _item_workspace_id(space_ids, item.workspace),
                 item.type_code,
                 item.type_code,
                 item.status_code,

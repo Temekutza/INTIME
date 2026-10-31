@@ -13,7 +13,10 @@
   <div id="app">
     <header id="header">
       <a class="brand" href="/" aria-label="intime — главная"><strong>InTime</strong><span>Управляй своим временем</span></a>
-      <label class="workspace"><span class="visually-hidden">Пространство</span><select disabled title="В приложении пока одно общее пространство"><option>Общее пространство</option></select></label>
+      <div class="workspace-control">
+        <label class="workspace"><span class="visually-hidden">Пространство</span><select id="workspace-select" title="Пространство"></select></label>
+        <button id="workspace-add" type="button" class="icon-btn" aria-label="Создать пространство" title="Создать пространство" data-icon="plus"></button>
+      </div>
       <div class="global-search">
         <form id="search-form" role="search"><label class="visually-hidden" for="search-input">Поиск событий и задач</label><input id="search-input" type="search" maxlength="300" placeholder="Поиск событий и задач" autocomplete="off"><button class="icon-btn" aria-label="Найти" type="submit" data-icon="search"></button></form>
         <section id="search-results" class="search-results" aria-label="Результаты поиска" hidden><div class="section-heading"><strong>Результаты поиска</strong><button id="search-close" type="button" class="icon-btn" aria-label="Закрыть поиск" data-icon="close"></button></div><p id="search-status" role="status"></p><div id="search-list"></div></section>

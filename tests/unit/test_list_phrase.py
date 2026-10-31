@@ -64,6 +64,7 @@ def test_answer_comes_from_items() -> None:
         due_on=None,
         due_at=None,
         remind_at=None,
+        workspace_id=1,
         created_at=moment,
         updated_at=moment,
     )

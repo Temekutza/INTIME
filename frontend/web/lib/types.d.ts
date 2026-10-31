@@ -15,6 +15,12 @@ export interface RitmEvent {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  workspace_id?: number | null;
+}
+export interface Workspace {
+  id: number;
+  name: string;
+  is_default: boolean;
 }
 export type EventPatch = Partial<Pick<RitmEvent, "title" | "date" | "time" | "status">>;
 export type View = "tasks" | "reminders" | "calendar";

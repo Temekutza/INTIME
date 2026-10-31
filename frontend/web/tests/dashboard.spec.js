@@ -65,12 +65,14 @@ async function geometry(page) {
   expect(findings).toEqual([]);
 }
 
-test("dashboard uses real data; unavailable workspace and notifications are explicit", async ({ page }) => {
+test("dashboard uses real data; workspaces switch and notifications stay unavailable", async ({ page }) => {
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   await loaded(page);
   await expect(page.locator("h1")).toHaveText("Мои задачи");
   await expect(page.locator("#day-time")).toHaveText("10:10");
-  await expect(page.locator(".workspace select")).toBeDisabled();
+  await expect(page.locator("#workspace-select")).toBeEnabled();
+  expect(await page.locator("#workspace-select option").count()).toBeGreaterThan(0);
+  await expect(page.getByRole("button", { name: "Создать пространство" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Уведомления недоступны" })).toBeDisabled();
   await expect(page.locator("#day-meetings")).toContainText("Планирование с командой");
   await expect(page.locator("#records")).toContainText("Согласовать макет");

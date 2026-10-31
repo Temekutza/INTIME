@@ -95,3 +95,13 @@ def test_item_query_limit_bounds() -> None:
         ItemQuery(limit=201)
     assert ItemQuery(limit=1).limit == 1
     assert ItemQuery(limit=200).limit == 200
+
+
+def test_workspace_id_is_optional_and_positive() -> None:
+    assert ItemCreate(item_type="task", title="x").workspace_id is None
+    assert ItemCreate(item_type="task", title="x", workspace_id=2).workspace_id == 2
+    with pytest.raises(ValidationError):
+        ItemCreate(item_type="task", title="x", workspace_id=0)
+    with pytest.raises(ValidationError):
+        ItemQuery(workspace_id=0)
+    assert ItemQuery(workspace_id=4).workspace_id == 4

@@ -21,6 +21,7 @@ class ItemFilters:
     end_date: date | None
     limit: int
     offset: int
+    workspace_id: int | None = None
 
 
 def _like(value: str) -> str:
@@ -34,6 +35,8 @@ def _filtered(user_id: int, filters: ItemFilters):
         .join(ItemStatus, PlannerItem.status_id == ItemStatus.id)
         .where(PlannerItem.user_id == user_id, PlannerItem.deleted_at.is_(None))
     )
+    if filters.workspace_id is not None:
+        stmt = stmt.where(PlannerItem.workspace_id == filters.workspace_id)
     if filters.item_type is not None:
         stmt = stmt.where(PlannerItem.item_type_code == filters.item_type)
     if filters.status is not None:

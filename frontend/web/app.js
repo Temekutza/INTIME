@@ -1,6 +1,7 @@
 "use strict";
 
 import { eventStore } from "./lib/store.js";
+import { workspaceStore } from "./lib/workspace.js";
 import { colorStore, paintObject, normalizeHex } from "./lib/colors.js";
 import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.js";
 import { maskProfanity } from "./lib/profanity.js";
@@ -315,7 +316,25 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
     document.body.classList.add("is-empty");
   }
 
-  function setBusy(busy) {
+  function hideThinking() {
+    dialogue.querySelectorAll(".message-thinking").forEach((node) => node.remove());
+  }
+
+  function showThinking(requestId) {
+    hideThinking();
+    const item = el("li", "message message-assistant message-thinking");
+    if (requestId) item.dataset.requestId = requestId;
+    const status = el("p", "message__text thinking-indicator");
+    const dots = el("span", "thinking-dots");
+    dots.setAttribute("aria-hidden", "true");
+    dots.append(el("span"), el("span"), el("span"));
+    status.append(dots, el("span", "", "Думаю…"));
+    item.append(status);
+    dialogue.append(item);
+    scrollDialogue();
+  }
+
+  function setBusy(busy, requestId) {
     state.sending = busy;
     messageInput.disabled = busy;
     sendButton.disabled = busy || state.recording;
@@ -323,15 +342,12 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
     suggestions.querySelectorAll("button").forEach((button) => {
       button.disabled = busy;
     });
-    document.querySelectorAll("article.event-card").forEach((card) => {
-      card.querySelectorAll("button").forEach((button) => {
-        button.disabled = busy || eventStore.saving.has(Number(card.dataset.eventId));
-      });
-    });
     dialogueScroll.setAttribute("aria-busy", busy ? "true" : "false");
     dialogue.querySelectorAll('.confirmation-card[data-state="pending"] .confirmation-card__status').forEach(node => {
       node.textContent = busy ? "Обработка действия…" : "Ожидает подтверждения";
     });
+    if (busy) showThinking(requestId);
+    else hideThinking();
     colorStore.changed();
   }
 
@@ -388,7 +404,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
   }
 
   function findAssistantMessage(requestId) {
-    return dialogue.querySelector('.message-assistant[data-request-id="' + escapeAttr(requestId) + '"]');
+    return dialogue.querySelector('.message-assistant[data-request-id="' + escapeAttr(requestId) + '"]:not(.message-thinking)');
   }
 
   function removeSendError(requestId) {
@@ -685,7 +701,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
       removeSendError(pending.request_id);
     }
     cancelSpeech();
-    setBusy(true);
+    setBusy(true, pending.request_id);
     sayStatus("Думаю…");
     sendPending(pending);
   }
@@ -702,6 +718,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
           text: pending.text,
           new_event_color: pending.new_event_color || null,
           require_confirmation: true,
+          workspace_id: workspaceStore.currentId,
         }),
       }, MESSAGE_TIMEOUT_MS);
     } catch (error) {
@@ -1732,7 +1749,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
           card = next;
         }
         const busy = eventStore.saving.has(Number(card.dataset.eventId));
-        card.querySelectorAll("button").forEach((button) => { button.disabled = busy || state.sending; });
+        card.querySelectorAll("button").forEach((button) => { button.disabled = busy; });
       });
     });
     function stopHiddenVoice() {

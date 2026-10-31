@@ -39,6 +39,19 @@ test("failed PATCH retains previous data and exposes error; duplicate writes rej
   assert.equal(store.saving.size, 0);
 });
 
+test("load requests the selected workspace", async t => {
+  let url = "";
+  t.mock.method(globalThis, "fetch", async href => {
+    url = String(href);
+    return Response.json({ events: [event()] });
+  });
+  const store = new EventStore();
+  store.workspaceId = 7;
+  await store.load();
+  assert.match(url, /workspace_id=7/);
+  assert.equal(store.events[0].title, "Test");
+});
+
 test("failed reload preserves last confirmed collection", async t => {
   t.mock.method(globalThis, "fetch", async () => { throw new TypeError("offline"); });
   const store = new EventStore(); store.events = [event()]; store.loaded = true;

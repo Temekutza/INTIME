@@ -30,7 +30,7 @@ from app.schemas.ritm import (
     SearchResponse,
     TranscriptionOut,
 )
-from app.services import assistant_service, item_service
+from app.services import assistant_service, item_service, workspace_service
 from app.services.delete_match import choice_index, resolve_delete
 from app.services.list_phrase import is_command, match_list_phrase
 from app.services.text_guard import REFUSAL, ensure_plain, for_model, is_rejected, mask_profanity
@@ -60,6 +60,19 @@ _PROPOSAL_KEYS = (
     "color",
 )
 _MAX_AUDIO = 10 * 1024 * 1024
+
+
+def _scoped_query(query: ItemQuery, workspace_id: int | None) -> ItemQuery:
+    if workspace_id is None:
+        return query
+    return query.model_copy(update={"workspace_id": workspace_id})
+
+
+async def _bind_workspace(session: AsyncSession, user: User, item: ItemCreate) -> ItemCreate:
+    workspace_id = await workspace_service.resolve_id(session, user, item.workspace_id)
+    if item.workspace_id == workspace_id:
+        return item
+    return item.model_copy(update={"workspace_id": workspace_id})
 
 
 def _session_key(value: str | None) -> str:
@@ -189,6 +202,7 @@ async def _conflicts(session: AsyncSession, user: User, data: ItemCreate) -> lis
         end_date=None,
         limit=200,
         offset=0,
+        workspace_id=data.workspace_id,
     )
     rows, _ = await item_repository.list_items(session, user.id, filters)
     found: list[RitmEvent] = []
@@ -205,6 +219,8 @@ def _payload_from_create(data: ItemCreate, color: str | None, timezone: str, ext
     card = card_from_create(data, color, timezone)
     if extra:
         card.update(extra)
+    if data.workspace_id is not None:
+        card["workspace_id"] = data.workspace_id
     card["complete"] = True
     card["fingerprint"] = _fingerprint(card)
     return card
@@ -215,6 +231,7 @@ def _payload_from_request(data: EventCreateRequest, item: ItemCreate, timezone: 
 
 
 def _item_from_payload(payload: dict, timezone: str) -> ItemCreate:
+    workspace_id = payload.get("workspace_id")
     return item_create_from_ritm(
         item_type=payload["event_type"],
         title=payload["title"],
@@ -223,6 +240,7 @@ def _item_from_payload(payload: dict, timezone: str) -> ItemCreate:
         duration_min=payload.get("duration_min"),
         is_deadline=bool(payload.get("is_deadline")),
         timezone=timezone,
+        workspace_id=workspace_id if isinstance(workspace_id, int) else None,
     )
 
 
@@ -359,7 +377,10 @@ async def list_events(
     *,
     item_type: EventType | None = None,
     status: str | None = None,
+    workspace_id: int | None = None,
 ) -> EventListResponse:
+    if workspace_id is not None:
+        await workspace_service.get_owned(session, user, workspace_id)
     filters = ItemFilters(
         item_type=item_type,
         status="done" if status == "done" else None,
@@ -370,6 +391,7 @@ async def list_events(
         end_date=None,
         limit=LIST_LIMIT,
         offset=0,
+        workspace_id=workspace_id,
     )
     rows, _ = await item_repository.list_items(session, user.id, filters)
     events = [event_from_item(item, code, user.timezone) for item, code in rows]
@@ -383,11 +405,17 @@ async def get_event(session: AsyncSession, user: User, event_id: int) -> RitmEve
 
 
 async def search_events(
-    session: AsyncSession, user: User, query: str, limit: int
+    session: AsyncSession,
+    user: User,
+    query: str,
+    limit: int,
+    workspace_id: int | None = None,
 ) -> SearchResponse:
     text = query.strip()
     if not text:
         return SearchResponse(hits=[])
+    if workspace_id is not None:
+        await workspace_service.get_owned(session, user, workspace_id)
     filters = ItemFilters(
         item_type=None,
         status=None,
@@ -398,6 +426,7 @@ async def search_events(
         end_date=None,
         limit=limit,
         offset=0,
+        workspace_id=workspace_id,
     )
     rows, _ = await item_repository.list_items(session, user.id, filters)
     return SearchResponse(
@@ -417,7 +446,9 @@ async def create_event(
         duration_min=data.duration_min,
         is_deadline=data.is_deadline,
         timezone=user.timezone,
+        workspace_id=data.workspace_id,
     )
+    item = await _bind_workspace(session, user, item)
     payload = _payload_from_request(data, item, user.timezone)
     conversation = await _conversation(session, user, data.session_id)
     request_id = _request_key(data.request_id)
@@ -702,18 +733,21 @@ async def handle_message(
         return await _reject_pending(session, user, conversation.id, request_id, pending, data)
 
     phrase = match_list_phrase(spoken, assistant_service.local_now(user))
+    space_id = data.workspace_id
+    if space_id is not None:
+        await workspace_service.get_owned(session, user, space_id)
     if phrase is not None:
-        return await _answer_list(session, user, conversation.id, request_id, data, phrase)
+        return await _answer_list(session, user, conversation.id, request_id, data, phrase, space_id)
     history = await assistant_repository.list_messages(session, conversation.id, 20)
     dialog = _context(history, pending)
-    agenda = await assistant_service.agenda_text(session, user)
+    agenda = await assistant_service.agenda_text(session, user, workspace_id=space_id)
     context = "\n".join(part for part in (agenda, dialog) if part)
     command = await assistant_service.interpret(user, spoken, context)
     if command.action == "create":
         return await _handle_create(session, user, conversation.id, request_id, data, command, pending)
     if command.action == "list":
         await assistant_repository.reject_open(session, conversation.id)
-        query = assistant_service._query(command.filters)
+        query = _scoped_query(assistant_service._query(command.filters), space_id)
         found = await item_service.list_items(session, user, query)
         events = [await _ritm(session, user, row.id) for row in found.items]
         text = assistant_service.reply_for_filters(found, query, user)
@@ -756,9 +790,12 @@ async def _answer_list(
     request_id: str,
     data: MessageRequest,
     phrase,
+    workspace_id: int | None,
 ) -> ReplyResponse:
     await assistant_repository.reject_open(session, conversation_id)
-    found = await item_service.list_items(session, user, assistant_service._query_from_phrase(phrase))
+    found = await item_service.list_items(
+        session, user, _scoped_query(assistant_service._query_from_phrase(phrase), workspace_id)
+    )
     events = [await _ritm(session, user, row.id) for row in found.items]
     text = assistant_service.list_reply(found, phrase, ZoneInfo(user.timezone))
     await _store_turn(
@@ -905,7 +942,9 @@ async def _handle_delete(
     data: MessageRequest,
     spoken: str,
 ) -> ReplyResponse:
-    found = await item_service.list_items(session, user, ItemQuery(limit=200, offset=0))
+    found = await item_service.list_items(
+        session, user, _scoped_query(ItemQuery(limit=200, offset=0), data.workspace_id)
+    )
     decision = resolve_delete(found.items, spoken, assistant_service.local_now(user))
     await assistant_repository.reject_open(session, conversation_id)
     if decision.item_id is not None:
@@ -1035,6 +1074,20 @@ async def _handle_create(
     except Unprocessable:
         return await _handle_none(session, user, conversation_id, request_id, data, command, pending)
     color = _chosen_color(data, pending.payload if pending is not None else None)
+    creates = [
+        await _bind_workspace(
+            session,
+            user,
+            row.model_copy(
+                update={
+                    "workspace_id": data.workspace_id
+                    if data.workspace_id is not None
+                    else row.workspace_id
+                }
+            ),
+        )
+        for row in creates
+    ]
     if len(creates) > 1:
         return await _offer_batch(
             session, user, conversation_id, request_id, data, creates, color, truncated

@@ -22,6 +22,7 @@ class RitmEvent(BaseModel):
     created_at: str
     updated_at: str
     deleted_at: str | None = None
+    workspace_id: int | None = None
 
 
 class EventListResponse(BaseModel):
@@ -48,6 +49,7 @@ class EventCreateRequest(BaseModel):
     color: str | None = None
     session_id: str | None = None
     request_id: str | None = None
+    workspace_id: int | None = Field(default=None, ge=1)
 
     @field_validator("title")
     @classmethod
@@ -121,6 +123,7 @@ class MessageRequest(BaseModel):
     request_id: str | None = None
     new_event_color: str | None = None
     require_confirmation: bool = False
+    workspace_id: int | None = Field(default=None, ge=1)
 
     @field_validator("text")
     @classmethod

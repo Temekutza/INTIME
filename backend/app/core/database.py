@@ -20,6 +20,7 @@ _CHECK_MESSAGES = {
     "known_item_type": "Неизвестный тип записи",
     "valid_login": "Некорректный логин",
     "valid_email": "Некорректная почта",
+    "valid_workspace_name": "Некорректное название пространства",
 }
 
 
@@ -28,8 +29,12 @@ def _raise_from_integrity(exc: IntegrityError) -> NoReturn:
     sqlstate = getattr(orig, "sqlstate", None)
     constraint = getattr(orig, "constraint_name", None)
     if sqlstate == "23505":
+        if constraint == "workspaces_user_name_unique":
+            raise Conflict("Пространство с таким названием уже есть") from exc
         raise Conflict("Логин или почта уже заняты") from exc
     if sqlstate == "23503":
+        if constraint == "planner_items_workspace_fk":
+            raise Unprocessable("Пространство не найдено") from exc
         raise Unprocessable("Неизвестный тип или статус") from exc
     if sqlstate == "23514":
         raise Unprocessable(_CHECK_MESSAGES.get(constraint or "", "Запись нарушает правила")) from exc

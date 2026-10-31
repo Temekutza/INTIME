@@ -172,6 +172,7 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 #edit-status { background: var(--assistant-bg); color: var(--accent); }
 .editor-datetime { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 10px; margin-top:10px; }
 .editor-datetime .field-label { min-width:0; margin:0; font-size:var(--editor-label); }
+.editor-datetime .field-caption { display:block; }
 .editor-datetime .field-date { display:flex; height:42px; margin-top:6px; }
 .editor-datetime input { display:block; min-width:0; width:100%; height:42px; min-height:42px; margin:0; padding:8px 40px 8px 10px; border-radius:12px; font-size:var(--editor-text); font-variant-numeric:tabular-nums; }
 .editor-datetime .field-calendar-button { right:4px; width:32px; height:32px; }
@@ -308,6 +309,15 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 .create-form { display: flex; flex-direction: column; gap: 16px; padding-top: 18px; }
 .form-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; font-size: var(--text-sm); font-weight: 500; }
 .form-field input, .form-field select { width: 100%; font-weight: 400; }
+.field-caption { display: inline; }
+.req { color: var(--danger); margin-left: 4px; text-decoration: none; font-weight: 700; }
+.form-field.is-invalid input,
+.form-field.is-invalid .field-select__trigger,
+.field-date.is-invalid input,
+.editor-identity.is-invalid .editor-title,
+.editor-datetime .field-label.is-invalid input,
+input[aria-invalid=true],
+textarea[aria-invalid=true] { border-color: var(--danger); }
 .form-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .checkbox-field { display: flex; align-items: center; gap: 9px; font-size: var(--text-sm); }
 .create-status { min-height: 20px; font-size: var(--text-sm); overflow-wrap: anywhere; }

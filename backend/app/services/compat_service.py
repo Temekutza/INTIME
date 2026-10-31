@@ -267,13 +267,28 @@ async def _conflicts(session: AsyncSession, user: User, data: ItemCreate) -> lis
     return found
 
 
+def _schedule_complete(payload: dict) -> bool:
+    kind = payload.get("event_type")
+    if kind in {"meeting", "reminder"}:
+        return bool(payload.get("date") and payload.get("time"))
+    return True
+
+
+def _incomplete_text(item_type: str) -> str:
+    if item_type == "reminder":
+        return "Для напоминания нужны дата и время."
+    if item_type == "meeting":
+        return "Для встречи нужны дата и время."
+    return "Не хватает данных для создания. Уточните название, дату или время."
+
+
 def _payload_from_create(data: ItemCreate, color: str | None, timezone: str, extra: dict | None = None) -> dict:
     card = card_from_create(data, color, timezone)
     if extra:
         card.update(extra)
     if data.workspace_id is not None:
         card["workspace_id"] = data.workspace_id
-    card["complete"] = True
+    card["complete"] = _schedule_complete(card)
     card["fingerprint"] = _fingerprint(card)
     return card
 
@@ -1291,6 +1306,18 @@ async def _handle_create(
         )
     item = creates[0]
     payload = _payload_from_create(item, color, user.timezone)
+    if not payload.get("complete"):
+        await _put_pending(session, conversation_id, request_id, payload)
+        text = _incomplete_text(item.item_type)
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="clarify",
+            assistant_text=text,
+        )
+        return _reply(kind="clarify", text=text, request_id=request_id, proposal=payload)
     conflicts = await _conflicts(session, user, item)
     past = is_past(payload.get("date"), payload.get("time"), user.timezone)
     needs_confirm = data.require_confirmation or bool(conflicts) or past

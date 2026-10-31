@@ -79,14 +79,39 @@ export function groupReminders(events) {
   return groupByStatus(events, "reminder");
 }
 
+/**
+ * @param {Pick<RitmEvent, 'type'>} event
+ * @param {string} title
+ * @param {string} date
+ * @param {string} time
+ * @param {string} status
+ * @param {{ duration?: string }} [extra]
+ */
+export function fieldErrors(event, title, date, time, status, extra = {}) {
+  /** @type {Record<string, string>} */
+  const errors = {};
+  if (!title.trim() || title.trim().length > 300) errors.title = "Название должно содержать от 1 до 300 символов.";
+  if (status !== "planned" && status !== "done") errors.status = "Недопустимый статус.";
+  if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isoDay(dayDate(date)) !== date)) errors.date = "Проверьте дату.";
+  if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) errors.time = "Проверьте время.";
+  if (time && !date) errors.date = "Для времени укажите дату.";
+  if (event.type !== "task") {
+    if (!date) errors.date = "Для встречи или напоминания нужны дата и время.";
+    if (!time) errors.time = "Для встречи или напоминания нужны дата и время.";
+  }
+  if (extra.duration !== undefined && event.type === "meeting") {
+    const minutes = Number(extra.duration);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 1440) {
+      errors.duration = "Укажите длительность от 1 до 1440 минут.";
+    }
+  }
+  return errors;
+}
+
 /** @param {Pick<RitmEvent, 'type'>} event @param {string} title @param {string} date @param {string} time @param {string} status */
 export function validatePatch(event, title, date, time, status) {
-  if (!title.trim() || title.trim().length > 300) throw new Error("Название должно содержать от 1 до 300 символов.");
-  if (status !== "planned" && status !== "done") throw new Error("Недопустимый статус.");
-  if (date && (!/^\d{4}-\d{2}-\d{2}$/.test(date) || isoDay(dayDate(date)) !== date)) throw new Error("Проверьте дату.");
-  if (time && !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new Error("Проверьте время.");
-  if (time && !date) throw new Error("Для времени укажите дату.");
-  if (event.type !== "task" && (!date || !time)) throw new Error("Для встречи или напоминания нужны дата и время.");
+  const first = Object.values(fieldErrors(event, title, date, time, status))[0];
+  if (first) throw new Error(first);
   /** @type {import('./types').EventPatch} */
   const patch = { title: title.trim(), date: date || null, time: time || null, status };
   return patch;

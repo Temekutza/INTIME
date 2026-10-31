@@ -148,6 +148,59 @@ def test_form_create_is_idempotent_and_conflicts_on_different_payload(
     assert len(client.get("/api/events").json()["events"]) == 1
 
 
+def test_create_requires_schedule_for_meeting_and_reminder(
+    client: TestClient, accounts: Accounts
+) -> None:
+    accounts.register()
+    meeting = client.post("/api/events", json={"type": "meeting", "title": "Стендап"})
+    assert meeting.status_code == 422
+    reminder = client.post(
+        "/api/events",
+        json={"type": "reminder", "title": "Позвонить", "date": "2028-06-01"},
+    )
+    assert reminder.status_code == 422
+    orphan_time = client.post(
+        "/api/events",
+        json={"type": "task", "title": "Звонок", "time": "18:00"},
+    )
+    assert orphan_time.status_code == 422
+    bad_date = client.post(
+        "/api/events",
+        json={"type": "task", "title": "Звонок", "date": "2026-02-30"},
+    )
+    assert bad_date.status_code == 422
+    assert client.get("/api/events").json()["events"] == []
+
+
+def test_message_meeting_without_time_asks_for_required_fields(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    _stub_llm(
+        monkeypatch,
+        {
+            "action": "create",
+            "reply": "Запишу встречу",
+            "item": {"item_type": "meeting", "title": "Стендап"},
+        },
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "need-time",
+            "request_id": "need-time-1",
+            "text": "Добавь встречу стендап",
+            "require_confirmation": True,
+        },
+    )
+    assert asked.status_code == 200, asked.text
+    body = asked.json()
+    assert body["kind"] == "clarify"
+    assert "дата и время" in body["text"].lower()
+    assert body["proposal"]["title"] == "Стендап"
+    assert client.get("/api/events").json()["events"] == []
+
+
 def test_meeting_conflict_and_past_date_ask_before_write(
     client: TestClient, accounts: Accounts
 ) -> None:

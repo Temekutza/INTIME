@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { eventMeta, groupReminders, groupTasks, isoDay, relativeTime, sortedEvents, validatePatch } from "../lib/model.js";
+import { eventMeta, fieldErrors, groupReminders, groupTasks, isoDay, relativeTime, sortedEvents, validatePatch } from "../lib/model.js";
 import { isEvent, isWorkspace, listEvents, listWorkspaces, patchEvent, searchEvents } from "../lib/api.js";
 
 export const event = (id = 1, extra = {}) => ({
@@ -57,6 +57,14 @@ test("patch validation rejects impossible dates, empty names, orphan times and u
   assert.throws(() => validatePatch(event(), "x", "", "", "progress"));
   assert.throws(() => validatePatch(event(1, { type: "reminder" }), "x", "", "", "planned"));
   assert.deepEqual(validatePatch(event(), "  x  ", "", "", "done"), { title: "x", date: null, time: null, status: "done" });
+});
+
+test("required meeting fields mark date, time and duration together", () => {
+  const errors = fieldErrors({ type: "meeting" }, "Стендап", "", "", "planned", { duration: "" });
+  assert.equal(errors.date, "Для встречи или напоминания нужны дата и время.");
+  assert.equal(errors.time, "Для встречи или напоминания нужны дата и время.");
+  assert.equal(errors.duration, "Укажите длительность от 1 до 1440 минут.");
+  assert.deepEqual(fieldErrors({ type: "task" }, "Отчёт", "", "", "planned"), {});
 });
 
 test("API DTO validation rejects incomplete or unsupported event responses", () => {

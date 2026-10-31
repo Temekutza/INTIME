@@ -80,7 +80,10 @@ class DateField {
     control.addEventListener("keydown", event => { if (event.altKey && event.key === "ArrowDown") { event.preventDefault(); this.open(); } });
     this.sync();
   }
-  sync() { this.trigger.disabled = this.control.disabled; }
+  sync() {
+    this.trigger.disabled = this.control.disabled;
+    this.host.classList.toggle("is-invalid", this.control.getAttribute("aria-invalid") === "true");
+  }
   open() {
     if (this.control.disabled) return;
     this.month = this.control.value ? dayDate(this.control.value) : clock.now(); this.mode = "days"; this.render(); this.popup.open();
@@ -141,7 +144,10 @@ class TimeField {
     control.addEventListener("keydown", event => { if (event.altKey && event.key === "ArrowDown") { event.preventDefault(); this.open(); } });
     this.sync();
   }
-  sync() { this.trigger.disabled = this.control.disabled; }
+  sync() {
+    this.trigger.disabled = this.control.disabled;
+    this.host.classList.toggle("is-invalid", this.control.getAttribute("aria-invalid") === "true");
+  }
   open() {
     if (this.control.disabled) return;
     const now = clock.now(); const initial = this.control.value || `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -184,4 +190,33 @@ export function enhanceFields(root = document) {
     const existing = controls.get(control); if (existing) { existing.sync(); return; }
     controls.set(control, control instanceof HTMLSelectElement ? new StyledSelect(control) : control.type === "date" ? new DateField(control) : new TimeField(control));
   });
+}
+
+const ERROR_FIELDS = {
+  "create-name": "title",
+  "create-date": "date",
+  "create-time": "time",
+  "create-duration": "duration",
+  "edit-title": "title",
+  "edit-date": "date",
+  "edit-time": "time",
+};
+
+/** @param {ParentNode} root @param {Record<string, string>} errors */
+export function showFieldErrors(root, errors) {
+  let first = null;
+  for (const control of root.querySelectorAll("input, select, textarea")) {
+    if (!(control instanceof HTMLElement) || !control.id) continue;
+    const key = ERROR_FIELDS[control.id];
+    if (!key) continue;
+    const message = errors[key];
+    control.setAttribute("aria-invalid", message ? "true" : "false");
+    control.closest(".form-field")?.classList.toggle("is-invalid", Boolean(message));
+    control.closest(".field-date")?.classList.toggle("is-invalid", Boolean(message));
+    control.closest(".field-label")?.classList.toggle("is-invalid", Boolean(message));
+    control.closest(".editor-identity")?.classList.toggle("is-invalid", Boolean(message));
+    if (message && !first) first = control;
+  }
+  enhanceFields(root);
+  if (first instanceof HTMLElement) first.focus();
 }

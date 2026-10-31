@@ -1,11 +1,11 @@
 // @ts-check
 import { button, el, icon } from "./ui.js";
-import { validatePatch, eventMeta } from "./model.js";
+import { fieldErrors, validatePatch, eventMeta } from "./model.js";
 import { hasProfanity } from "./profanity.js";
 import { typeLabel } from "./views.js";
 import { colorStore, paintObject } from "./colors.js";
 import { ColorPicker } from "./color-picker.js";
-import { enhanceFields } from "./fields.js";
+import { enhanceFields, showFieldErrors } from "./fields.js";
 import { confirmDiscard } from "./confirm-dialog.js";
 
 export class EventEditor {
@@ -70,19 +70,29 @@ export class EventEditor {
     heading.append(el("span", "eyebrow", event.type === "task" ? "ВЫБРАННАЯ ЗАДАЧА" : "ВЫБРАННАЯ ЗАПИСЬ"));
     const close = button("", "icon-btn", () => this.close());
     close.append(icon("close")); close.setAttribute("aria-label", "Закрыть редактор"); heading.append(close);
-    const form = el("form", "editor-form");
+    const form = el("form", "editor-form"); form.noValidate = true;
     const title = el("textarea", "editor-title");
     title.value = event.title; title.maxLength = 300; title.required = true; title.rows = 2;
-    title.id = "edit-title";
+    title.id = "edit-title"; title.setAttribute("aria-required", "true");
     const titleLabel = el("label", "visually-hidden", "Название записи"); titleLabel.htmlFor = title.id;
     const status = el("select"); status.id = "edit-status";
     status.append(new Option("Создана", "planned"), new Option("Завершена", "done")); status.value = event.status;
     const statusLabel = el("label", "field-label", "Статус"); statusLabel.htmlFor = status.id;
     const date = el("input"); date.type = "date"; date.value = event.date || ""; date.id = "edit-date";
     const time = el("input"); time.type = "time"; time.value = event.time?.slice(0, 5) || ""; time.id = "edit-time";
+    const needsSchedule = event.type !== "task";
+    date.required = needsSchedule; time.required = needsSchedule;
+    date.setAttribute("aria-required", String(needsSchedule));
+    time.setAttribute("aria-required", String(needsSchedule));
     const fields = el("div", "editor-datetime");
-    const dateLabel = el("label", "field-label", event.is_deadline ? "Дата дедлайна" : "Дата"); dateLabel.htmlFor = date.id; dateLabel.append(date);
-    const timeLabel = el("label", "field-label", "Время"); timeLabel.htmlFor = time.id; timeLabel.append(time);
+    const dateCaption = el("span", "field-caption", event.is_deadline ? "Дата дедлайна" : "Дата");
+    const timeCaption = el("span", "field-caption", "Время");
+    if (needsSchedule) {
+      const dateMark = el("abbr", "req", "*"); dateMark.title = "Обязательное поле"; dateCaption.append(dateMark);
+      const timeMark = el("abbr", "req", "*"); timeMark.title = "Обязательное поле"; timeCaption.append(timeMark);
+    }
+    const dateLabel = el("label", "field-label"); dateLabel.htmlFor = date.id; dateLabel.append(dateCaption, date);
+    const timeLabel = el("label", "field-label"); timeLabel.htmlFor = time.id; timeLabel.append(timeCaption, time);
     fields.append(dateLabel, timeLabel);
     const info = el("div", "editor-info");
     this.colorPicker = new ColorPicker({ label: "Цвет записи", getValue: () => colorStore.overrides[String(event.id)] || null,
@@ -115,13 +125,24 @@ export class EventEditor {
       if (event.target instanceof Element && event.target.closest(".color-picker")) return;
       this.dirty = true; save.disabled = false; message.textContent = "Есть несохранённые изменения";
     };
-    form.addEventListener("input", dirty);
+    form.addEventListener("input", event => {
+      if (event.target instanceof HTMLElement) {
+        event.target.setAttribute("aria-invalid", "false");
+        event.target.closest(".form-field, .editor-identity, .field-label")?.classList.remove("is-invalid");
+        event.target.closest(".field-date")?.classList.remove("is-invalid");
+      }
+      dirty(event);
+    });
     form.addEventListener("change", dirty);
     form.addEventListener("submit", async submit => {
       submit.preventDefault();
       if (this.busy) return;
       try {
-        if (hasProfanity(title.value)) throw new Error("Не принимаем ненормативную лексику в названии.");
+        const errors = fieldErrors(event, title.value, date.value, time.value, status.value);
+        if (hasProfanity(title.value)) errors.title = "Не принимаем ненормативную лексику в названии.";
+        showFieldErrors(form, errors);
+        const firstError = Object.values(errors)[0];
+        if (firstError) throw new Error(firstError);
         const patch = validatePatch(event, title.value, date.value, time.value, status.value);
         this.busy = true;
         for (const field of [title, status, date, time, save, complete, close]) field.disabled = true;

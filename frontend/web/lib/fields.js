@@ -43,7 +43,10 @@ class StyledSelect {
     this.sync();
   }
   sync() {
-    this.trigger.replaceChildren(el("span", "", this.control.selectedOptions[0]?.textContent || "Выберите"), el("span", "field-chevron", "⌄"));
+    const mark = icon("chevron");
+    mark.classList.add("field-chevron");
+    mark.setAttribute("aria-hidden", "true");
+    this.trigger.replaceChildren(el("span", "", this.control.selectedOptions[0]?.textContent || "Выберите"), mark);
     this.trigger.disabled = this.control.disabled; this.trigger.title = this.control.title;
   }
   /** @param {number} [focusIndex] */

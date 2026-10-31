@@ -41,6 +41,7 @@ const paths = {
   sparkles: '<path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3ZM20 2v4m-2-2h4"/>',
   time: '<circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/>',
   paperclip: '<path d="m9 15 7-7a3 3 0 0 0-4-4l-8 8a5 5 0 0 0 7 7l9-9M8 14l7-7"/>',
+  chevron: '<path d="m6 9 6 6 6-6"/>',
 };
 
 /** @param {string} name */

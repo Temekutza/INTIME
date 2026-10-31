@@ -107,7 +107,22 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 #status-filter { color: var(--accent); background: var(--assistant-bg); border-color: transparent; font-size: var(--text-xs); }
 .sort-control { margin-left: auto; display: flex; align-items: center; gap: 4px; color: var(--ink-secondary); }
 .sort-control select { border: 0; font-size: var(--text-xs); padding: 6px 2px; }
-#calendar-controls { display: flex; gap: 8px; }
+#calendar-controls { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+#calendar-controls .field-date { width: auto; height: 36px; flex: 0 0 auto; }
+#calendar-controls .field-date > input {
+  width: 10.75rem;
+  height: 36px;
+  min-height: 36px;
+  padding: 0 34px 0 12px;
+  line-height: 34px;
+  font-size: var(--text-sm);
+}
+#calendar-controls .field-calendar-button { width: 28px; height: 28px; }
+#calendar-controls #calendar-today {
+  height: 36px;
+  box-shadow: none;
+  border: 1px solid var(--line);
+}
 .data-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; background: var(--surface-error); color: var(--danger); padding: 10px 12px; border-radius: var(--radius-s); margin-bottom: 12px; font-size: var(--text-sm); }
 .content-grid { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 auto; min-height: 0; min-width: 0; gap: 14px; }
 .content-grid.has-editor { grid-template-columns: minmax(240px, 1fr) minmax(250px, .65fr); }
@@ -274,10 +289,11 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 /* Contextual controls share the same surface, focus and selection language. */
 .ui-popover { position: fixed; inset: auto; margin: 0; min-width: 180px; max-width: calc(100vw - 24px); overflow-y: auto; padding: 8px; border: 1px solid var(--line-strong); border-radius: 14px; color: var(--ink); background: var(--bg); box-shadow: 0 6px 22px rgb(35 32 61 / 12%); }
 .field-select { position: relative; display: inline-flex; min-width: 0; width: 100%; }
-.field-select > select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; }
+.field-select > select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; pointer-events: none; appearance: none; }
 .field-select__trigger { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-width: 0; min-height: 38px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); text-align: left; }
 .field-select__trigger > span:first-child { min-width: 0; overflow-wrap: anywhere; }
-.field-chevron { color: var(--ink-muted); flex: 0 0 auto; }
+.field-chevron { color: var(--ink-muted); flex: 0 0 auto; width: 14px; height: 14px; }
+.field-chevron svg { width: 14px; height: 14px; }
 .select-options { max-width: 420px; }
 .select-option { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 38px; width: 100%; padding: 9px 12px; border-radius: 8px; text-align: left; font-size: var(--text-sm); }
 .select-option[aria-selected=true] { background: var(--assistant-bg); color: var(--accent); font-weight: 600; }

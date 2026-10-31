@@ -71,7 +71,7 @@ def test_assistant_timeout_does_not_write(
 ) -> None:
     accounts.register()
     _stub_llm(monkeypatch, BadGateway("LLM не ответил"))
-    response = client.post("/api/v1/assistant/messages", json={"text": "что у меня завтра"})
+    response = client.post("/api/v1/assistant/messages", json={"text": "переименуй черновик"})
     assert response.status_code == 502
     assert client.get("/api/v1/items").json()["total"] == 0
 
@@ -92,7 +92,7 @@ def test_assistant_update_and_delete_own_item(
     assert updated.json()["items"][0]["title"] == "Готово"
 
     _stub_llm(monkeypatch, {"action": "delete", "reply": "удалила", "item_id": item_id})
-    deleted = client.post("/api/v1/assistant/messages", json={"text": "удали это"})
+    deleted = client.post("/api/v1/assistant/messages", json={"text": "удали задачу готово"})
     assert deleted.status_code == 200
     assert client.get(f"/api/v1/items/{item_id}").status_code == 404
 
@@ -107,8 +107,9 @@ def test_assistant_cannot_delete_foreign_item(
     with TestClient(app) as other:
         accounts.register(other)
         _stub_llm(monkeypatch, {"action": "delete", "reply": "удаляю", "item_id": item_id})
-        response = other.post("/api/v1/assistant/messages", json={"text": "удали задачу"})
-        assert response.status_code == 404
+        response = other.post("/api/v1/assistant/messages", json={"text": "удали задачу чужое"})
+        assert response.status_code == 200
+        assert response.json()["action"] == "none"
 
     kept = client.get(f"/api/v1/items/{item_id}")
     assert kept.status_code == 200
@@ -122,7 +123,8 @@ def test_assistant_delete_without_id_does_not_write(
     created = client.post("/api/v1/items", json={"item_type": "task", "title": "Живая"})
     _stub_llm(monkeypatch, {"action": "delete", "reply": "какую?"})
     response = client.post("/api/v1/assistant/messages", json={"text": "удали задачу"})
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert response.json()["action"] == "none"
     assert client.get(f"/api/v1/items/{created.json()['id']}").status_code == 200
 
 

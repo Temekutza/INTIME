@@ -1,4 +1,7 @@
 import pytest
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
@@ -373,6 +376,81 @@ def test_v1_items_still_work(client: TestClient, accounts: Accounts) -> None:
     assert compat.json()["events"][0]["status"] == "planned"
 
 
+def test_tomorrow_question_reads_records_without_model(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+
+    async def complete(_messages: list[dict[str, str]]) -> dict:
+        raise AssertionError("для показа модель не вызывается")
+
+    monkeypatch.setattr("app.services.assistant_service.llm.complete", complete)
+    tomorrow = datetime.now(ZoneInfo("Europe/Moscow")).date() + timedelta(days=1)
+    created = client.post(
+        "/api/events",
+        json={
+            "type": "task",
+            "title": "Прием",
+            "date": tomorrow.isoformat(),
+            "time": "10:00",
+            "request_id": "tomorrow-task",
+        },
+    )
+    assert created.status_code == 200, created.text
+    asked = client.post(
+        "/api/message",
+        json={"session_id": "days", "request_id": "ask-tomorrow", "text": "а что там на завтра"},
+    )
+    assert asked.status_code == 200, asked.text
+    body = asked.json()
+    assert body["kind"] == "info"
+    assert "Прием" in body["text"]
+    assert "10:00" in body["text"]
+    assert body["events"][0]["date"] == tomorrow.isoformat()
+
+    today = client.post(
+        "/api/message",
+        json={"session_id": "days", "request_id": "ask-today", "text": "какие задачи на сегодня"},
+    )
+    assert today.status_code == 200, today.text
+    assert today.json()["events"] == []
+    assert "нет" in today.json()["text"]
+
+
+def test_profanity_inside_task_is_masked_and_task_is_created(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    seen: dict[str, str] = {}
+
+    async def complete(messages: list[dict[str, str]]) -> dict:
+        seen["user"] = messages[-1]["content"]
+        return {
+            "action": "create",
+            "reply": "Запишу прием",
+            "item": {"item_type": "task", "title": "прием блять", "due_on": "2026-11-02"},
+        }
+
+    monkeypatch.setattr("app.services.assistant_service.llm.complete", complete)
+    response = client.post(
+        "/api/message",
+        json={
+            "session_id": "swear",
+            "request_id": "swear-1",
+            "text": "запиши задачу в 10 утра на прием блять",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["kind"] == "created"
+    assert response.json()["events"][0]["title"] == "прием"
+    assert "блять" not in seen["user"]
+    assert "запиши задачу в 10 утра на прием" in seen["user"]
+    history = client.get("/api/history", params={"session_id": "swear", "limit": 20})
+    user_lines = [row["text"] for row in history.json()["messages"] if row["role"] == "user"]
+    assert user_lines[0] == "запиши задачу в 10 утра на прием *****"
+    assert "блять" not in user_lines[0]
+
+
 def test_message_llm_failure_does_not_write(
     client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -380,7 +458,161 @@ def test_message_llm_failure_does_not_write(
     _stub_llm(monkeypatch, BadGateway("LLM не ответил"))
     response = client.post(
         "/api/message",
-        json={"session_id": "chat-fail", "request_id": "fail-1", "text": "что завтра"},
+        json={"session_id": "chat-fail", "request_id": "fail-1", "text": "запиши встречу с Петром"},
     )
     assert response.status_code == 502
     assert client.get("/api/events").json()["events"] == []
+
+
+def test_message_creates_up_to_three_and_confirms_each(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    _stub_llm(
+        monkeypatch,
+        {
+            "action": "create",
+            "reply": "Три задачи",
+            "items": [
+                {"item_type": "task", "title": "Молоко"},
+                {"item_type": "task", "title": "Хлеб"},
+                {"item_type": "task", "title": "Сыр"},
+                {"item_type": "task", "title": "Лишняя"},
+            ],
+        },
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "batch",
+            "request_id": "batch-1",
+            "text": "запиши молоко, хлеб, сыр и ещё одну",
+            "require_confirmation": True,
+        },
+    )
+    body = asked.json()
+    assert asked.status_code == 200, asked.text
+    assert body["kind"] == "confirm"
+    assert body["proposal"]["title"] == "Молоко"
+    assert "Хлеб" in body["text"]
+    assert "Сыр" in body["text"]
+    assert "Лишняя" not in body["text"]
+    assert "первые три" in body["text"]
+    assert client.get("/api/events").json()["events"] == []
+
+    first = client.post(
+        "/api/message",
+        json={"session_id": "batch", "request_id": "batch-yes-1", "text": "Да"},
+    )
+    assert first.json()["kind"] == "created"
+    assert first.json()["expecting"] == "confirmation"
+    assert first.json()["proposal"]["title"] == "Хлеб"
+    assert [row["title"] for row in client.get("/api/events").json()["events"]] == ["Молоко"]
+
+    second = client.post(
+        "/api/message",
+        json={"session_id": "batch", "request_id": "batch-yes-2", "text": "Да"},
+    )
+    assert second.json()["proposal"]["title"] == "Сыр"
+    third = client.post(
+        "/api/message",
+        json={"session_id": "batch", "request_id": "batch-yes-3", "text": "Да"},
+    )
+    assert third.json()["kind"] == "created"
+    assert third.json()["expecting"] is None
+    assert {row["title"] for row in client.get("/api/events").json()["events"]} == {
+        "Молоко",
+        "Хлеб",
+        "Сыр",
+    }
+
+
+def test_message_delete_uses_title_and_time(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    tomorrow = (datetime.now(ZoneInfo("Europe/Moscow")) + timedelta(days=1)).date().isoformat()
+    kept = client.post(
+        "/api/events",
+        json={
+            "type": "task",
+            "title": "Отчёт",
+            "date": tomorrow,
+            "time": "10:00",
+            "is_deadline": True,
+            "request_id": "keep-task",
+        },
+    )
+    target = client.post(
+        "/api/events",
+        json={
+            "type": "task",
+            "title": "Прием",
+            "date": tomorrow,
+            "time": "10:00",
+            "is_deadline": True,
+            "request_id": "drop-task",
+        },
+    )
+    assert kept.status_code == 200 and target.status_code == 200
+    wrong_id = kept.json()["events"][0]["id"]
+    right_id = target.json()["events"][0]["id"]
+    _stub_llm(
+        monkeypatch,
+        {"action": "delete", "reply": "Удаляю", "item_id": wrong_id},
+    )
+    response = client.post(
+        "/api/message",
+        json={
+            "session_id": "drop",
+            "request_id": "drop-1",
+            "text": "удали задачу прием завтра в 10:00",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["kind"] == "deleted"
+    titles = {row["title"] for row in client.get("/api/events").json()["events"]}
+    assert titles == {"Отчёт"}
+    assert client.get(f"/api/events/{right_id}").status_code == 404
+
+
+def test_message_delete_asks_when_several_match(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    tomorrow = (datetime.now(ZoneInfo("Europe/Moscow")) + timedelta(days=1)).date().isoformat()
+    for title, request_id in (("Прием", "a"), ("Отчёт", "b")):
+        created = client.post(
+            "/api/events",
+            json={
+                "type": "task",
+                "title": title,
+                "date": tomorrow,
+                "time": "10:00",
+                "is_deadline": True,
+                "request_id": request_id,
+            },
+        )
+        assert created.status_code == 200, created.text
+    _stub_llm(monkeypatch, {"action": "delete", "reply": "Удаляю первую", "item_id": 1})
+    response = client.post(
+        "/api/message",
+        json={
+            "session_id": "ask",
+            "request_id": "ask-1",
+            "text": "удали задачу завтра в 10:00",
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["kind"] == "choice"
+    assert {row["title"] for row in body["events"]} == {"Прием", "Отчёт"}
+    assert {row["title"] for row in client.get("/api/events").json()["events"]} == {"Прием", "Отчёт"}
+
+    chosen = client.post(
+        "/api/message",
+        json={"session_id": "ask", "request_id": "ask-2", "text": "первую"},
+    )
+    assert chosen.status_code == 200, chosen.text
+    assert chosen.json()["kind"] == "deleted"
+    assert len(client.get("/api/events").json()["events"]) == 1

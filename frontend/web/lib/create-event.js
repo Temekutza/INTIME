@@ -4,6 +4,7 @@ import { colorStore } from "./colors.js";
 import { ColorPicker } from "./color-picker.js";
 import { button, el } from "./ui.js";
 import { validatePatch } from "./model.js";
+import { hasProfanity } from "./profanity.js";
 import { enhanceFields } from "./fields.js";
 import { confirmDiscard } from "./confirm-dialog.js";
 
@@ -105,6 +106,7 @@ export class CreateEventDialog {
       try {
         const type = currentType();
         // The same validation as the editor, without manufacturing a domain object.
+        if (hasProfanity(name.value)) throw new Error("Не принимаем ненормативную лексику в названии.");
         validatePatch({ type }, name.value, date.value, time.value, "planned");
         const payload = { type, title: name.value.trim(), date: date.value || null, time: time.value || null,
           duration_min: type === "meeting" ? Number(duration.value) : null, is_deadline: type === "task" && deadline.checked, color };

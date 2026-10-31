@@ -27,6 +27,7 @@ class AssistantCommand(BaseModel):
     action: AssistantAction
     reply: str = ""
     item: dict | None = None
+    items: list[dict] | None = None
     item_id: int | None = None
     filters: dict | None = None
 

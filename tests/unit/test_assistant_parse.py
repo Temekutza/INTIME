@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 from app.core.errors import Unprocessable
 from app.schemas.assistant import AssistantCommand, AssistantMessageRequest
-from app.services.assistant_service import _create_payload, _query, _update_payload
+from app.services.assistant_service import _create_payload, _query, _update_payload, command_creates
 
 
 def test_assistant_request_strips_text() -> None:
@@ -52,6 +52,23 @@ def test_query_maps_from_to_filters() -> None:
     assert query.status == "todo"
     assert query.q == "молоко"
     assert query.limit == 50
+
+
+def test_command_creates_keeps_three_records() -> None:
+    command = AssistantCommand.model_validate(
+        {
+            "action": "create",
+            "items": [
+                {"item_type": "task", "title": "Первая"},
+                {"item_type": "task", "title": "Вторая"},
+                {"item_type": "task", "title": "Третья"},
+                {"item_type": "task", "title": "Четвёртая"},
+            ],
+        }
+    )
+    items, truncated = command_creates(command)
+    assert truncated is True
+    assert [item.title for item in items] == ["Первая", "Вторая", "Третья"]
 
 
 def test_query_rejects_unknown_type() -> None:

@@ -39,7 +39,7 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 .icon { width: 18px; height: 18px; vertical-align: middle; }
 .icon-btn { width: 32px; height: 32px; color: var(--ink-secondary); border-radius: var(--radius-s); }
 .icon-btn svg { display: block; }
-.btn { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 36px; padding: 8px 12px; border-radius: var(--radius-s); font-size: var(--text-sm); font-weight: 500; }
+.btn { display: inline-flex; justify-content: center; align-items: center; gap: 6px; height: 36px; padding: 8px 12px; border-radius: var(--radius-s); font-size: var(--text-sm); font-weight: 500; }
 .btn-primary { color: var(--on-accent); background: var(--accent); }
 .btn-quiet { box-shadow: inset 0 0 0 1px var(--line-strong); background: var(--bg); }
 .btn-danger { color: var(--on-danger); background: var(--danger-strong); }
@@ -169,6 +169,7 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 #composer { flex: 0 0 auto; padding: 12px 16px 0; }
 .composer-box { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 5px; padding: 10px; border: 1px solid var(--line-strong); background: var(--bg); border-radius: var(--radius); }
 .composer-box:focus-within { border-color: var(--accent); }
+.composer-box.is-listening { border-color: var(--danger-strong); box-shadow: 0 0 0 3px rgb(181 55 72 / 16%); }
 #message-input { width: 100%; min-height: 34px; max-height: 160px; resize: none; border: 0; padding: 0 1px; background: transparent; font-size: var(--text-sm); line-height: 1.6; }
 #message-input::placeholder { color: var(--ink-placeholder); }
 #message-input.is-interim { font-style: italic; color: var(--ink-secondary); }
@@ -177,6 +178,7 @@ input[type=checkbox] { flex: 0 0 auto; width: 15px; height: 15px; accent-color: 
 #send-button:disabled { opacity: .5; }
 #mic-button { color: var(--accent); background: var(--assistant-bg); border-radius: 50%; }
 #mic-button.is-recording { color: var(--on-danger); background: var(--danger-strong); }
+.mic-timer { min-width: 2.6em; font-size: var(--text-xs); line-height: 1; color: var(--danger-strong); font-variant-numeric: tabular-nums; text-align: right; }
 .composer-note { font-size: var(--text-xs); text-align: center; color: var(--ink-secondary); margin-top: 6px; overflow-wrap: anywhere; }
 .composer-note:empty { display: none; }
 .composer-note.is-danger { color: var(--danger); }

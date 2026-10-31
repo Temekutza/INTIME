@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>intime</title>
-  <link rel="stylesheet" href="/static/styles.css?v=13">
+  <title>InTime</title>
+  <link rel="stylesheet" href="/static/styles.css">
   <link rel="icon" href="data:,">
 </head>
 <body class="is-empty">
   <a id="skip-to-input" class="skip-link" href="#message-input">К полю ввода</a>
   <div id="app">
     <header id="header">
-      <a class="brand" href="/" aria-label="intime — главная"><strong>intime<span aria-hidden="true">.</span></strong><span>Управляй своим временем</span></a>
+      <a class="brand" href="/" aria-label="intime — главная"><strong>InTime</strong><span>Управляй своим временем</span></a>
       <label class="workspace"><span class="visually-hidden">Пространство</span><select disabled title="В приложении пока одно общее пространство"><option>Общее пространство</option></select></label>
       <div class="global-search">
         <form id="search-form" role="search"><label class="visually-hidden" for="search-input">Поиск событий и задач</label><input id="search-input" type="search" maxlength="300" placeholder="Поиск событий и задач" autocomplete="off"><button class="icon-btn" aria-label="Найти" type="submit" data-icon="search"></button></form>
@@ -84,6 +84,7 @@
         <div class="composer-box">
           <textarea id="message-input" aria-label="Сообщение" rows="1" maxlength="1000" autocomplete="off" enterkeyhint="send" placeholder="Напишите, что нужно сделать…"></textarea>
           <button type="button" id="attach-button" class="icon-btn" disabled aria-label="Вложения недоступны" title="Прикрепление файлов пока не поддерживается" data-icon="paperclip"></button>
+          <span id="mic-timer" class="mic-timer" hidden>0 с</span>
           <button type="button" id="mic-button" class="mic icon-btn" aria-pressed="false" aria-keyshortcuts="Alt+M" aria-label="Говорить" aria-describedby="mic-hint" title="Говорить (Alt+M)">
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
               <path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2z"></path>
@@ -118,7 +119,7 @@
   </div>
   <div id="live-status" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
   <div id="live-reply" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
-  <script type="module" src="/static/dashboard.js?v=5"></script>
-  <script type="module" src="/static/app.js?v=15"></script>
+  <script type="module" src="/static/dashboard.js"></script>
+  <script type="module" src="/static/app.js"></script>
 </body>
 </html>

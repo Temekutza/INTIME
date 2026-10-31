@@ -3,6 +3,8 @@
 import { eventStore } from "./lib/store.js";
 import { colorStore, paintObject, normalizeHex } from "./lib/colors.js";
 import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.js";
+import { maskProfanity } from "./lib/profanity.js";
+import { frameLevel, noteCapture } from "./lib/capture.js";
 
 (function () {
   const DEFAULT_PLACEHOLDER = "Напишите, что нужно сделать…";
@@ -46,6 +48,7 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
   const pendingHint = document.getElementById("pending-hint");
   const suggestions = document.getElementById("suggestions");
   const composer = document.getElementById("composer");
+  const composerBox = composer.querySelector(".composer-box");
   const voiceUnsupported = document.getElementById("voice-unsupported");
   const micDenied = document.getElementById("mic-denied");
   const composerStatus = document.getElementById("composer-status");
@@ -68,6 +71,7 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
   const liveReply = document.getElementById("live-reply");
 
   let micButton = document.getElementById("mic-button");
+  const micTimer = document.getElementById("mic-timer");
   const cardData = new WeakMap();
   const patching = new Set();
 
@@ -98,7 +102,11 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
     localFinishing: false,
     audioContext: null,
     localSession: null,
+    liveParts: [],
+    liveChain: Promise.resolve(),
+    placeholderBefore: "",
     historyGeneration: 0,
+    micTimerId: 0,
   };
 
   function el(tag, className, text) {
@@ -202,16 +210,21 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
     return event.is_deadline === true || event.is_deadline === 1;
   }
 
+  function clockText(value) {
+    const match = String(value).match(/^(\d{2}:\d{2})/);
+    return match ? match[1] : String(value);
+  }
+
   function formatMeta(event, withDuration) {
     const parts = [];
-    if (event.date) {
-      let day = formatDay(String(event.date));
-      if (isDeadline(event)) day = "до " + day;
-      parts.push(day);
+    if (event.date && event.time) {
+      parts.push(formatDay(String(event.date)) + " в " + clockText(event.time));
+    } else if (event.date) {
+      const day = formatDay(String(event.date));
+      parts.push(isDeadline(event) ? "до " + day : day);
     } else {
       parts.push("без даты");
     }
-    if (event.time) parts.push(String(event.time));
     if (withDuration && typeof event.duration_min === "number" && Number.isFinite(event.duration_min)) {
       parts.push(String(event.duration_min) + " мин");
     }
@@ -405,7 +418,7 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
   function appendUserMessage(text, requestId) {
     const item = el("li", "message message-user");
     if (requestId) item.dataset.requestId = requestId;
-    item.append(el("p", "message__text", text));
+    item.append(el("p", "message__text", maskProfanity(text)));
     dialogue.append(item);
     scrollDialogue();
     return item;
@@ -656,11 +669,15 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
       const events = Array.isArray(data.events) ? data.events : [];
       const labels = Array.isArray(data.suggestions) ? data.suggestions : [];
       const item = appendAssistantBubble(replyLead(data.text || "", events), kind, requestId);
-      if (kind === "confirm") item.append(confirmationCard(data.proposal));
-      else appendCards(item, events, {
-        showIndex: kind === "choice",
-        showChoice: kind === "choice" && labels.length === 0,
-      });
+      if (kind !== "confirm") {
+        appendCards(item, events, {
+          showIndex: kind === "choice",
+          showChoice: kind === "choice" && labels.length === 0,
+        });
+      }
+      if (data.proposal && (kind === "confirm" || data.expecting === "confirmation")) {
+        item.append(confirmationCard(data.proposal));
+      }
     }
     applyReplyChrome(data);
     revealReply(existing || findAssistantMessage(requestId));
@@ -840,7 +857,8 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
     if (!pending) return;
     let index = -1;
     for (let i = 0; i < messages.length; i += 1) {
-      if (messages[i].role === "user" && messages[i].text === pending.text) index = i;
+      const shown = maskProfanity(pending.text);
+      if (messages[i].role === "user" && (messages[i].text === pending.text || messages[i].text === shown)) index = i;
     }
     if (index >= 0 && messages.slice(index + 1).some((message) => message.role === "assistant")) {
       clearPending();
@@ -851,7 +869,8 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
     if (!user) {
       const matches = [...dialogue.querySelectorAll(".message-user")].filter((node) => {
         const paragraph = node.querySelector(".message__text");
-        return paragraph && paragraph.textContent === pending.text;
+        const shown = maskProfanity(pending.text);
+        return paragraph && (paragraph.textContent === pending.text || paragraph.textContent === shown);
       });
       user = matches.length ? matches[matches.length - 1] : null;
       if (user) user.dataset.requestId = pending.request_id;
@@ -1127,10 +1146,37 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
     });
   }
 
+  function setMicTimer(ms) {
+    if (!micTimer) return;
+    micTimer.hidden = false;
+    micTimer.textContent = Math.floor(ms / 1000) + " с";
+  }
+
+  function stopMicTimer() {
+    if (state.micTimerId) window.clearInterval(state.micTimerId);
+    state.micTimerId = 0;
+    if (!micTimer) return;
+    micTimer.hidden = true;
+    micTimer.textContent = "";
+  }
+
+  function startMicTimer() {
+    stopMicTimer();
+    const started = performance.now();
+    setMicTimer(0);
+    state.micTimerId = window.setInterval(() => setMicTimer(performance.now() - started), 200);
+  }
+
   function resetRecordingChrome() {
+    stopMicTimer();
     state.recording = false;
     messageInput.readOnly = false;
     messageInput.classList.remove("is-interim");
+    if (composerBox) composerBox.classList.remove("is-listening");
+    if (state.placeholderBefore) {
+      messageInput.placeholder = state.placeholderBefore;
+      state.placeholderBefore = "";
+    }
     if (micButton) {
       micButton.classList.remove("is-recording");
       micButton.setAttribute("aria-pressed", "false");
@@ -1199,12 +1245,6 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
     }
     const ready = state.audioContext.resume();
     if (ready && typeof ready.catch === "function") ready.catch(() => {});
-  }
-
-  function rmsOf(samples) {
-    let sum = 0;
-    for (let i = 0; i < samples.length; i += 1) sum += samples[i] * samples[i];
-    return Math.sqrt(sum / samples.length);
   }
 
   function encodePcm16(chunks, rate) {
@@ -1285,17 +1325,56 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
     });
   }
 
+  function showLiveText() {
+    const text = state.liveParts.join(" ").replace(/\s+/g, " ").trim();
+    messageInput.value = text;
+    messageInput.classList.add("is-interim");
+    resizeInput();
+  }
+
+  function enqueuePreview(chunks, rate) {
+    const generation = state.listenGeneration;
+    const pcm = encodePcm16(chunks, rate);
+    if (pcm.length < 800) return;
+    state.liveChain = state.liveChain.then(async () => {
+      if (generation !== state.listenGeneration) return;
+      let text = "";
+      try {
+        text = await transcribePcm(pcm);
+      } catch (error) {
+        return;
+      }
+      if (generation !== state.listenGeneration || !text) return;
+      state.liveParts.push(text);
+      showLiveText();
+      if (state.recording) sayStatus("Слушаю…");
+    }).catch(() => {});
+  }
+
+  async function transcribePcm(pcm) {
+    const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+    const response = await fetch("/api/speech", {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: bytes,
+    });
+    if (!response.ok) {
+      if (response.status === 503) state.localDown = true;
+      return "";
+    }
+    const data = await response.json();
+    return data && data.text ? String(data.text).trim() : "";
+  }
+
   function absorbSamples(bucket, input, rate) {
     bucket.chunks.push(new Float32Array(input));
     const ms = (input.length / rate) * 1000;
-    bucket.elapsed += ms;
-    if (rmsOf(input) >= 0.02) {
-      bucket.heard = true;
-      bucket.quiet = 0;
-    } else if (bucket.heard) {
-      bucket.quiet += ms;
+    const action = noteCapture(bucket, frameLevel(input), ms);
+    if (action === "preview") {
+      enqueuePreview(bucket.chunks.splice(0), rate);
+      return;
     }
-    if ((bucket.heard && bucket.quiet >= 900) || bucket.elapsed >= 60000) requestStopRecording("send");
+    if (action === "finish") requestStopRecording("send");
   }
 
   function captureIsActive() {
@@ -1335,7 +1414,10 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
           const processor = audioContext.createScriptProcessor(4096, 1, 1);
           const mute = audioContext.createGain();
           mute.gain.value = 0.00001;
-          const bucket = { chunks: [], heard: false, quiet: 0, elapsed: 0 };
+          const bucket = {
+            chunks: [], heard: false, quiet: 0, elapsed: 0,
+            chunkHeard: false, chunkQuiet: 0, chunkElapsed: 0,
+          };
           const rate = audioContext.sampleRate || 48000;
           processor.onaudioprocess = (event) => {
             if (!state.localCapture) return;
@@ -1344,7 +1426,7 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
           source.connect(processor);
           processor.connect(mute);
           mute.connect(audioContext.destination);
-          state.localSession = { stream, source, processor, mute, chunks: bucket.chunks, rate };
+          state.localSession = { stream, source, processor, mute, chunks: bucket.chunks, rate, bucket };
         } catch (error) {
           stopStream();
           failLocal(SPEECH_UNAVAILABLE);
@@ -1378,6 +1460,7 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
     resetRecordingChrome();
     state.latestTranscript = "";
     if (mode === "cancel" || state.micDenied) {
+      state.listenGeneration += 1;
       messageInput.value = state.draftBeforeRecord;
       resizeInput();
       composerStatus.textContent = "";
@@ -1385,46 +1468,31 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
       state.localFinishing = false;
       return;
     }
-    const pcm = session ? encodePcm16(session.chunks, session.rate) : new Int16Array();
-    if (!session || pcm.length < 800) {
-      messageInput.value = state.draftBeforeRecord;
-      resizeInput();
-      if (session) sayStatus("Не расслышала. Скажите ещё раз или напишите.");
-      else {
-        composerStatus.textContent = "";
-        liveStatus.textContent = "";
-      }
-      state.localFinishing = false;
-      return;
+    const generation = state.listenGeneration;
+    if (session && session.bucket.chunkHeard && session.chunks.length) {
+      enqueuePreview(session.chunks.splice(0), session.rate);
     }
-    sayStatus("Распознаю…");
+    sayStatus(state.liveParts.length ? "Распознаю…" : "Слушаю…");
+    messageInput.classList.add("is-interim");
     sendButton.disabled = true;
     if (micButton) micButton.disabled = true;
     try {
-      const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
-      const response = await fetch("/api/speech", {
-        method: "POST",
-        headers: { "Content-Type": "application/octet-stream" },
-        body: bytes,
-      });
-      if (!response.ok) {
-        if (response.status === 503) state.localDown = true;
-        messageInput.value = state.draftBeforeRecord;
-        resizeInput();
-        sayStatus(response.status === 503 ? SPEECH_UNAVAILABLE : SEND_ERROR);
-        return;
-      }
-      const data = await response.json();
-      const text = data && data.text ? String(data.text).trim() : "";
+      await state.liveChain;
+      if (generation !== state.listenGeneration) return;
+      const text = state.liveParts.join(" ").replace(/\s+/g, " ").trim();
+      messageInput.classList.remove("is-interim");
       if (!text) {
         messageInput.value = state.draftBeforeRecord;
         resizeInput();
-        sayStatus("Не расслышала. Скажите ещё раз или напишите.");
+        sayStatus(state.localDown ? SPEECH_UNAVAILABLE : "Не расслышала. Скажите ещё раз или напишите.");
         return;
       }
       messageInput.value = text;
+      resizeInput();
       submitText(text);
     } catch (error) {
+      if (generation !== state.listenGeneration) return;
+      messageInput.classList.remove("is-interim");
       messageInput.value = state.draftBeforeRecord;
       resizeInput();
       sayStatus(SEND_ERROR);
@@ -1484,13 +1552,20 @@ import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.j
     state.recordMode = "send";
     state.stopRequested = false;
     state.localFinishing = false;
+    state.liveParts = [];
+    state.liveChain = Promise.resolve();
+    state.placeholderBefore = messageInput.placeholder;
     state.recording = true;
     state.listenGeneration += 1;
     unlockAudio();
     cancelSpeech();
     messageInput.readOnly = true;
+    messageInput.value = "";
+    messageInput.placeholder = "Слушаю…";
     messageInput.classList.add("is-interim");
+    if (composerBox) composerBox.classList.add("is-listening");
     micButton.classList.add("is-recording");
+    startMicTimer();
     micButton.setAttribute("aria-pressed", "true");
     micButton.setAttribute("aria-label", "Остановить запись");
     sendButton.disabled = true;

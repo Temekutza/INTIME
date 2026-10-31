@@ -1,7 +1,8 @@
 import json
 import struct
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +13,7 @@ from app.models.assistant import AssistantMessage, AssistantProposal
 from app.models.user import User
 from app.repositories import assistant_repository, catalog_repository, color_repository, item_repository
 from app.repositories.item_repository import ItemFilters
-from app.schemas.item import ItemCreate
+from app.schemas.item import ItemCreate, ItemQuery
 from app.schemas.ritm import (
     ColorDefaultResponse,
     ColorOverrideResponse,
@@ -30,6 +31,9 @@ from app.schemas.ritm import (
     TranscriptionOut,
 )
 from app.services import assistant_service, item_service
+from app.services.delete_match import choice_index, resolve_delete
+from app.services.list_phrase import is_command, match_list_phrase
+from app.services.text_guard import REFUSAL, ensure_plain, for_model, is_rejected, mask_profanity
 from app.services.item_service import validate_schedule
 from app.services.ritm_map import (
     apply_schedule,
@@ -238,6 +242,7 @@ async def _store_turn(
     assistant_text: str,
 ) -> None:
     if user_text:
+        user_text = mask_profanity(user_text)
         existing = await assistant_repository.user_message_for_request(
             session, conversation_id, request_id
         )
@@ -253,7 +258,7 @@ async def _store_turn(
         session,
         conversation_id,
         role="assistant",
-        text=assistant_text,
+        text=mask_profanity(assistant_text),
         kind=kind,
         request_id=request_id,
     )
@@ -264,6 +269,7 @@ async def _put_pending(
     conversation_id: int,
     request_id: str,
     payload: dict,
+    action: str = "create",
 ) -> AssistantProposal:
     await assistant_repository.reject_open(session, conversation_id, keep_request_id=request_id)
     found = await assistant_repository.get_proposal(session, conversation_id, request_id)
@@ -272,12 +278,12 @@ async def _put_pending(
             session,
             conversation_id,
             request_id=request_id,
-            action="create",
+            action=action,
             payload=payload,
             status="pending",
         )
     found.payload = payload
-    found.action = "create"
+    found.action = action
     found.status = "pending"
     found.result_item_id = None
     found.resolved_at = None
@@ -402,6 +408,7 @@ async def search_events(
 async def create_event(
     session: AsyncSession, user: User, data: EventCreateRequest
 ) -> ReplyResponse:
+    ensure_plain(data.title)
     item = item_create_from_ritm(
         item_type=data.type,
         title=data.title,
@@ -474,6 +481,7 @@ async def patch_event(
         raise NotFound("Запись не найдена")
     item, current_status = found
     fields = data.model_dump(exclude_unset=True)
+    ensure_plain(fields.get("title"))
     if "title" in fields:
         item.title = fields["title"]
     if "date" in fields or "time" in fields:
@@ -558,7 +566,7 @@ async def set_event_color(
 def _context(messages: list[AssistantMessage], pending: AssistantProposal | None) -> str | None:
     parts: list[str] = []
     if messages:
-        lines = [f"{row.role}: {row.text}" for row in messages[-8:]]
+        lines = [f"{row.role}: {for_model(row.text)}" for row in messages[-8:]]
         parts.append("Недавний диалог:\n" + "\n".join(lines))
     if pending is not None:
         parts.append(
@@ -595,6 +603,7 @@ async def _confirm_pending(
     pending.payload = payload
     pending.result_item_id = event.id
     pending.resolved_at = datetime.now(timezone.utc)
+    nxt = _pop_follow(payload)
     await assistant_repository.add_proposal(
         session,
         conversation_id,
@@ -613,11 +622,14 @@ async def _confirm_pending(
         kind="created",
         assistant_text=text,
     )
-    return _reply(kind="created", text=text, request_id=request_id, events=[event], proposal=payload)
+    if nxt is None:
+        return _reply(kind="created", text=text, request_id=request_id, events=[event], proposal=payload)
+    return await _offer_follow(session, user, conversation_id, request_id, nxt, event=event)
 
 
 async def _reject_pending(
     session: AsyncSession,
+    user: User,
     conversation_id: int,
     request_id: str,
     pending: AssistantProposal,
@@ -625,6 +637,17 @@ async def _reject_pending(
 ) -> ReplyResponse:
     pending.status = "rejected"
     pending.resolved_at = datetime.now(timezone.utc)
+    nxt = _pop_follow(pending.payload)
+    if nxt is not None:
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="cancelled",
+            assistant_text="Эту не создаю.",
+        )
+        return await _offer_follow(session, user, conversation_id, request_id, nxt, event=None)
     text = "Хорошо, не создаю."
     await _store_turn(
         session,
@@ -646,29 +669,54 @@ async def handle_message(
         user_row = await assistant_repository.user_message_for_request(
             session, conversation.id, data.request_id
         )
-        if user_row is not None and user_row.text != data.text:
+        if user_row is not None and mask_profanity(user_row.text) != mask_profanity(data.text):
             raise Conflict("Эта фраза уже отправлялась с другим текстом")
         assistant = await assistant_repository.last_assistant_for_request(
             session, conversation.id, data.request_id
         )
         if assistant is not None:
             return await _replay_message(session, user, conversation.id, assistant)
+    if is_rejected(data.text):
+        await _store_turn(
+            session,
+            conversation.id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="info",
+            assistant_text=REFUSAL,
+        )
+        return _reply(kind="info", text=REFUSAL, request_id=request_id)
     pending = await assistant_repository.latest_pending(session, conversation.id)
-    verdict = _verdict(data.text)
-    if pending is not None and verdict == "yes":
+    spoken = for_model(data.text)
+    verdict = _verdict(spoken)
+    if pending is not None and pending.action == "delete":
+        outcome = await _take_delete_choice(
+            session, user, conversation.id, request_id, pending, data, spoken
+        )
+        if outcome is not None:
+            return outcome
+        pending = None
+    elif pending is not None and verdict == "yes":
         return await _confirm_pending(session, user, conversation.id, request_id, pending, data)
-    if pending is not None and verdict == "no":
-        return await _reject_pending(session, conversation.id, request_id, pending, data)
+    elif pending is not None and verdict == "no":
+        return await _reject_pending(session, user, conversation.id, request_id, pending, data)
 
+    phrase = match_list_phrase(spoken, assistant_service.local_now(user))
+    if phrase is not None:
+        return await _answer_list(session, user, conversation.id, request_id, data, phrase)
     history = await assistant_repository.list_messages(session, conversation.id, 20)
-    command = await assistant_service.interpret(user, data.text, _context(history, pending))
+    dialog = _context(history, pending)
+    agenda = await assistant_service.agenda_text(session, user)
+    context = "\n".join(part for part in (agenda, dialog) if part)
+    command = await assistant_service.interpret(user, spoken, context)
     if command.action == "create":
         return await _handle_create(session, user, conversation.id, request_id, data, command, pending)
     if command.action == "list":
         await assistant_repository.reject_open(session, conversation.id)
-        found = await item_service.list_items(session, user, assistant_service._query(command.filters))
+        query = assistant_service._query(command.filters)
+        found = await item_service.list_items(session, user, query)
         events = [await _ritm(session, user, row.id) for row in found.items]
-        text = command.reply.strip() or f"Найдено записей: {found.total}"
+        text = assistant_service.reply_for_filters(found, query, user)
         await _store_turn(
             session,
             conversation.id,
@@ -679,20 +727,7 @@ async def handle_message(
         )
         return _reply(kind="info", text=text, request_id=request_id, events=events)
     if command.action == "delete":
-        await assistant_repository.reject_open(session, conversation.id)
-        if command.item_id is None:
-            raise Unprocessable("Модель не указала запись")
-        await item_service.delete_item(session, user, command.item_id)
-        text = command.reply.strip() or "Запись удалена"
-        await _store_turn(
-            session,
-            conversation.id,
-            request_id=request_id,
-            user_text=data.text,
-            kind="deleted",
-            assistant_text=text,
-        )
-        return _reply(kind="deleted", text=text, request_id=request_id)
+        return await _handle_delete(session, user, conversation.id, request_id, data, spoken)
     if command.action == "update":
         await assistant_repository.reject_open(session, conversation.id)
         if command.item_id is None:
@@ -714,6 +749,278 @@ async def handle_message(
     return await _handle_none(session, user, conversation.id, request_id, data, command, pending)
 
 
+async def _answer_list(
+    session: AsyncSession,
+    user: User,
+    conversation_id: int,
+    request_id: str,
+    data: MessageRequest,
+    phrase,
+) -> ReplyResponse:
+    await assistant_repository.reject_open(session, conversation_id)
+    found = await item_service.list_items(session, user, assistant_service._query_from_phrase(phrase))
+    events = [await _ritm(session, user, row.id) for row in found.items]
+    text = assistant_service.list_reply(found, phrase, ZoneInfo(user.timezone))
+    await _store_turn(
+        session,
+        conversation_id,
+        request_id=request_id,
+        user_text=data.text,
+        kind="info",
+        assistant_text=text,
+    )
+    return _reply(kind="info", text=text, request_id=request_id, events=events)
+
+
+def _pop_follow(payload: dict) -> dict | None:
+    follow = payload.get("follow")
+    if not isinstance(follow, list) or not follow or not isinstance(follow[0], dict):
+        return None
+    nxt = dict(follow[0])
+    tail = [dict(row) for row in follow[1:] if isinstance(row, dict)]
+    if tail:
+        nxt["follow"] = tail
+    else:
+        nxt.pop("follow", None)
+    return nxt
+
+
+def _moment_label(day: str | None, clock: str | None, today: date) -> str:
+    clock_text = clock[:5] if isinstance(clock, str) and len(clock) >= 5 else ""
+    label = ""
+    if isinstance(day, str):
+        try:
+            parsed = date.fromisoformat(day)
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            delta = (parsed - today).days
+            label = {0: "сегодня", 1: "завтра", 2: "послезавтра", -1: "вчера"}.get(
+                delta, parsed.strftime("%d.%m")
+            )
+    if label and clock_text:
+        return f"{label} в {clock_text}"
+    if label:
+        return label
+    if clock_text:
+        return f"в {clock_text}"
+    return "без даты"
+
+
+def _payload_line(payload: dict, index: int, today: date) -> str:
+    names = {"task": "задача", "meeting": "встреча", "reminder": "напоминание"}
+    kind = names.get(str(payload.get("event_type")), "запись")
+    title = str(payload.get("title") or "Без названия")
+    day = payload.get("date") if isinstance(payload.get("date"), str) else None
+    clock = payload.get("time") if isinstance(payload.get("time"), str) else None
+    return f"{index}. {kind} «{title}», {_moment_label(day, clock, today)}"
+
+
+def _batch_text(payloads: list[dict], today: date, truncated: bool) -> str:
+    lines = [_payload_line(payload, index, today) for index, payload in enumerate(payloads, 1)]
+    head = "В фразе несколько записей. Каждую нужно подтвердить."
+    if truncated:
+        head += " Беру первые три."
+    return head + "\n" + "\n".join(lines) + "\nСначала первая."
+
+
+async def _offer_follow(
+    session: AsyncSession,
+    user: User,
+    conversation_id: int,
+    request_id: str,
+    nxt: dict,
+    event: RitmEvent | None,
+) -> ReplyResponse:
+    next_id = f"{request_id}:next"
+    await _put_pending(session, conversation_id, next_id, nxt)
+    today = assistant_service.local_now(user).date()
+    lead = "Запись создана." if event is not None else "Эту не создаю."
+    text = lead + "\nСледующая ждёт подтверждения.\n" + _payload_line(nxt, 1, today)
+    await _store_turn(
+        session,
+        conversation_id,
+        request_id=next_id,
+        user_text=None,
+        kind="confirm",
+        assistant_text=text,
+    )
+    return _reply(
+        kind="created" if event is not None else "cancelled",
+        text=text,
+        request_id=next_id,
+        events=[event] if event is not None else [],
+        proposal=nxt,
+        suggestions=["Да", "Нет"],
+        expecting="confirmation",
+    )
+
+
+async def _offer_batch(
+    session: AsyncSession,
+    user: User,
+    conversation_id: int,
+    request_id: str,
+    data: MessageRequest,
+    creates: list[ItemCreate],
+    color: str | None,
+    truncated: bool,
+) -> ReplyResponse:
+    today = assistant_service.local_now(user).date()
+    payloads = []
+    for index, item in enumerate(creates, 1):
+        payload = _payload_from_create(item, color, user.timezone)
+        payload["batch_index"] = index
+        payload["batch_total"] = len(creates)
+        payloads.append(payload)
+    first = dict(payloads[0])
+    rest = [dict(row) for row in payloads[1:]]
+    if rest:
+        first["follow"] = rest
+    await _put_pending(session, conversation_id, request_id, first)
+    text = _batch_text(payloads, today, truncated)
+    await _store_turn(
+        session,
+        conversation_id,
+        request_id=request_id,
+        user_text=data.text,
+        kind="confirm",
+        assistant_text=text,
+    )
+    return _reply(
+        kind="confirm",
+        text=text,
+        request_id=request_id,
+        proposal=first,
+        suggestions=["Да", "Нет"],
+        expecting="confirmation",
+    )
+
+
+async def _handle_delete(
+    session: AsyncSession,
+    user: User,
+    conversation_id: int,
+    request_id: str,
+    data: MessageRequest,
+    spoken: str,
+) -> ReplyResponse:
+    found = await item_service.list_items(session, user, ItemQuery(limit=200, offset=0))
+    decision = resolve_delete(found.items, spoken, assistant_service.local_now(user))
+    await assistant_repository.reject_open(session, conversation_id)
+    if decision.item_id is not None:
+        await item_service.delete_item(session, user, decision.item_id)
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="deleted",
+            assistant_text=decision.text,
+        )
+        return _reply(kind="deleted", text=decision.text, request_id=request_id)
+    if decision.choices:
+        events = [await _ritm(session, user, item_id) for item_id in decision.choices]
+        await _put_pending(
+            session,
+            conversation_id,
+            request_id,
+            {"intent": "delete", "event_ids": list(decision.choices)},
+            action="delete",
+        )
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="choice",
+            assistant_text=decision.text,
+        )
+        return _reply(
+            kind="choice",
+            text=decision.text,
+            request_id=request_id,
+            events=events,
+            expecting="choice",
+        )
+    await _store_turn(
+        session,
+        conversation_id,
+        request_id=request_id,
+        user_text=data.text,
+        kind="info",
+        assistant_text=decision.text,
+    )
+    return _reply(kind="info", text=decision.text, request_id=request_id)
+
+
+async def _take_delete_choice(
+    session: AsyncSession,
+    user: User,
+    conversation_id: int,
+    request_id: str,
+    pending: AssistantProposal,
+    data: MessageRequest,
+    spoken: str,
+) -> ReplyResponse | None:
+    raw_ids = pending.payload.get("event_ids")
+    ids = [int(item_id) for item_id in raw_ids] if isinstance(raw_ids, list) else []
+    index = choice_index(spoken)
+    if index is not None:
+        if index < 1 or index > len(ids):
+            text = "В списке нет такого номера."
+            await _store_turn(
+                session,
+                conversation_id,
+                request_id=request_id,
+                user_text=data.text,
+                kind="clarify",
+                assistant_text=text,
+            )
+            return _reply(kind="clarify", text=text, request_id=request_id, expecting="choice")
+        item_id = ids[index - 1]
+        await item_service.delete_item(session, user, item_id)
+        pending.status = "confirmed"
+        pending.resolved_at = datetime.now(timezone.utc)
+        text = "Запись удалена"
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="deleted",
+            assistant_text=text,
+        )
+        return _reply(kind="deleted", text=text, request_id=request_id)
+    if _verdict(spoken) == "no":
+        pending.status = "rejected"
+        pending.resolved_at = datetime.now(timezone.utc)
+        text = "Хорошо, не удаляю."
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="cancelled",
+            assistant_text=text,
+        )
+        return _reply(kind="cancelled", text=text, request_id=request_id)
+    if _verdict(spoken) == "yes" or not is_command(spoken):
+        text = "Напишите номер записи из списка."
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="clarify",
+            assistant_text=text,
+        )
+        return _reply(kind="clarify", text=text, request_id=request_id, expecting="choice")
+    pending.status = "rejected"
+    pending.resolved_at = datetime.now(timezone.utc)
+    return None
+
+
 async def _handle_create(
     session: AsyncSession,
     user: User,
@@ -724,10 +1031,15 @@ async def _handle_create(
     pending: AssistantProposal | None,
 ) -> ReplyResponse:
     try:
-        item = assistant_service._create_payload(command.item)
+        creates, truncated = assistant_service.command_creates(command)
     except Unprocessable:
         return await _handle_none(session, user, conversation_id, request_id, data, command, pending)
     color = _chosen_color(data, pending.payload if pending is not None else None)
+    if len(creates) > 1:
+        return await _offer_batch(
+            session, user, conversation_id, request_id, data, creates, color, truncated
+        )
+    item = creates[0]
     payload = _payload_from_create(item, color, user.timezone)
     conflicts = await _conflicts(session, user, item)
     past = is_past(payload.get("date"), payload.get("time"), user.timezone)
@@ -789,7 +1101,7 @@ async def _handle_none(
     if pending is not None or color:
         payload = dict(pending.payload) if pending is not None else proposal_card(
             item_type="task",
-            title=data.text[:300],
+            title=(for_model(data.text) or "Запись")[:300],
             day=None,
             clock=None,
             duration_min=None,

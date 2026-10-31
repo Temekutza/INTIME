@@ -1,6 +1,7 @@
 // @ts-check
 import { button, el, icon } from "./ui.js";
 import { validatePatch, eventMeta } from "./model.js";
+import { hasProfanity } from "./profanity.js";
 import { typeLabel } from "./views.js";
 import { colorStore, paintObject } from "./colors.js";
 import { ColorPicker } from "./color-picker.js";
@@ -110,6 +111,7 @@ export class EventEditor {
       submit.preventDefault();
       if (this.busy) return;
       try {
+        if (hasProfanity(title.value)) throw new Error("Не принимаем ненормативную лексику в названии.");
         const patch = validatePatch(event, title.value, date.value, time.value, status.value);
         this.busy = true;
         for (const field of [title, status, date, time, save, complete, close]) field.disabled = true;

@@ -1,7 +1,15 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
 from tests.conftest import Accounts
+
+
+def _stub_llm(monkeypatch: pytest.MonkeyPatch, payload: dict) -> None:
+    async def complete(_messages: list[dict[str, str]]) -> dict:
+        return payload
+
+    monkeypatch.setattr("app.services.assistant_service.llm.complete", complete)
 
 
 def _space(client: TestClient, name: str) -> dict:
@@ -144,3 +152,70 @@ def test_compat_workspaces_and_event_filter(client: TestClient, accounts: Accoun
     renamed = client.patch(f"/api/workspaces/{work_id}", json={"name": "Офис"})
     assert renamed.status_code == 200
     assert renamed.json()["name"] == "Офис"
+
+    stolen_patch = client.patch(
+        f"/api/events/{event['id']}",
+        params={"workspace_id": personal_id},
+        json={"title": "Чужой офис"},
+    )
+    assert stolen_patch.status_code == 404
+    still = client.get(f"/api/events/{event['id']}", params={"workspace_id": work_id})
+    assert still.status_code == 200
+    assert still.json()["title"] == "Стендап"
+
+
+def test_compat_history_and_replay_stay_in_workspace(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    default_id = client.get("/api/workspaces").json()["workspaces"][0]["id"]
+    work_id = client.post("/api/workspaces", json={"name": "Работа"}).json()["id"]
+    _stub_llm(
+        monkeypatch,
+        {
+            "action": "create",
+            "reply": "Запишу",
+            "item": {"item_type": "task", "title": "Рабочий отчёт"},
+        },
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "same-chat",
+            "request_id": "ws-msg-1",
+            "text": "Поставь задачу рабочий отчёт",
+            "require_confirmation": True,
+            "workspace_id": work_id,
+        },
+    )
+    assert asked.status_code == 200, asked.text
+    assert asked.json()["kind"] == "confirm"
+
+    home_history = client.get(
+        "/api/history", params={"session_id": "same-chat", "workspace_id": default_id}
+    )
+    work_history = client.get(
+        "/api/history", params={"session_id": "same-chat", "workspace_id": work_id}
+    )
+    assert home_history.status_code == 200
+    assert home_history.json()["messages"] == []
+    assert work_history.json()["messages"]
+    last = work_history.json()["messages"][-1]
+    assert last["kind"] == "confirm"
+    assert last["expecting"] == "confirmation"
+
+    replay = client.post(
+        "/api/message",
+        json={
+            "session_id": "same-chat",
+            "request_id": "ws-msg-1",
+            "text": "Поставь задачу рабочий отчёт",
+            "require_confirmation": True,
+            "workspace_id": default_id,
+        },
+    )
+    assert replay.status_code == 200
+    assert replay.json()["kind"] == "confirm"
+    assert replay.json()["proposal"]["title"] == "Рабочий отчёт"
+    assert client.get("/api/events", params={"workspace_id": default_id}).json()["events"] == []
+    assert client.get("/api/events", params={"workspace_id": work_id}).json()["events"] == []

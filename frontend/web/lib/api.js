@@ -41,9 +41,13 @@ export async function requestJson(url, options = {}) {
     try {
       const body = await response.json();
       if (record(body) && typeof body.detail === "string") detail = body.detail;
+      else if (record(body) && Array.isArray(body.detail)) {
+        const first = body.detail[0];
+        if (record(first) && typeof first.msg === "string") detail = first.msg;
+      }
     } catch { /* ответ не JSON */ }
     if (response.status === 401 || response.status === 403) throw new Error("Нет доступа к данным.");
-    if (response.status === 404) throw new HttpError("Запись уже удалена. Обновите список.", 404);
+    if (response.status === 404) throw new HttpError(detail || "Запись уже удалена. Обновите список.", 404);
     if (response.status === 409) throw new Error(detail || "Конфликт данных. Обновите список.");
     throw new Error(detail || `Сервер не выполнил запрос (${response.status}). Повторите попытку.`);
   }
@@ -60,8 +64,10 @@ function withQuery(url, params) {
   const query = search.toString();
   return query ? `${url}?${query}` : url;
 }
-/** Default space keeps legacy URLs. @param {string} url @param {number | null | undefined} id */
-export function workspaceUrl(url, id) { return withQuery(url, { workspace_id: id === 1 ? null : id }); }
+/** Selected space is always sent, including the default workspace. @param {string} url @param {number | null | undefined} id */
+export function workspaceUrl(url, id) {
+  return withQuery(url, { workspace_id: Number.isSafeInteger(id) && id >= 1 ? id : null });
+}
 
 /** @param {unknown} value @returns {value is Workspace} */
 export function isWorkspace(value) {
@@ -110,7 +116,7 @@ export async function patchEvent(id, patch, workspaceId) {
 
 /** @param {string} query @param {AbortSignal} signal @param {number | null} [workspaceId] @returns {Promise<RitmEvent[]>} */
 export async function searchEvents(query, signal, workspaceId) {
-  const data = await requestJson(withQuery("/api/search", { q: query, limit: 20, workspace_id: workspaceId === 1 ? null : workspaceId }), { signal });
+  const data = await requestJson(withQuery("/api/search", { q: query, limit: 20, workspace_id: Number.isSafeInteger(workspaceId) && workspaceId >= 1 ? workspaceId : null }), { signal });
   if (!record(data) || !Array.isArray(data.hits)) throw new Error("Неожиданный формат результатов поиска.");
   return data.hits.map((/** @type {unknown} */ hit) => {
     if (!record(hit) || !isEvent(hit.event)) throw new Error("Неожиданный формат найденной записи.");

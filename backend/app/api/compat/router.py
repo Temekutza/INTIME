@@ -89,8 +89,9 @@ async def get_event(
     event_id: int,
     user: CompatUser,
     session: Annotated[AsyncSession, Depends(get_session)],
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> RitmEvent:
-    return await compat_service.get_event(session, user, event_id)
+    return await compat_service.get_event(session, user, event_id, workspace_id)
 
 
 @router.patch("/events/{event_id}", response_model=RitmEvent)
@@ -99,8 +100,9 @@ async def patch_event(
     data: EventPatchRequest,
     user: CompatUser,
     session: Annotated[AsyncSession, Depends(get_session)],
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> RitmEvent:
-    return await compat_service.patch_event(session, user, event_id, data)
+    return await compat_service.patch_event(session, user, event_id, data, workspace_id)
 
 
 @router.delete("/events/{event_id}", status_code=204)
@@ -108,8 +110,9 @@ async def delete_event(
     event_id: int,
     user: CompatUser,
     session: Annotated[AsyncSession, Depends(get_session)],
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> Response:
-    await compat_service.delete_event(session, user, event_id)
+    await compat_service.delete_event(session, user, event_id, workspace_id)
     return Response(status_code=204)
 
 
@@ -119,8 +122,11 @@ async def patch_event_color(
     data: ColorBody,
     user: CompatUser,
     session: Annotated[AsyncSession, Depends(get_session)],
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> ColorOverrideResponse:
-    return await compat_service.set_event_color(session, user, event_id, data.color)
+    return await compat_service.set_event_color(
+        session, user, event_id, data.color, workspace_id
+    )
 
 
 @router.get("/search", response_model=SearchResponse)
@@ -167,8 +173,9 @@ async def get_history(
     session: Annotated[AsyncSession, Depends(get_session)],
     session_id: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> HistoryResponse:
-    return await compat_service.history(session, user, session_id, limit)
+    return await compat_service.history(session, user, session_id, limit, workspace_id)
 
 
 @router.post("/speech", response_model=TranscriptionOut)

@@ -74,6 +74,14 @@ test("API rejects HTTP and schema failures; search encodes query and uses server
   await patchEvent(1, { status: "done" });
   assert.equal(request.url, "/api/events/1");
   assert.deepEqual(JSON.parse(request.options.body), { status: "done" });
+  let defaultUrl = "";
+  globalThis.fetch = async url => { defaultUrl = String(url); return Response.json({ events: [event()] }); };
+  await listEvents(undefined, 1);
+  assert.match(defaultUrl, /\/api\/events\?workspace_id=1/);
+  let defaultSearch = "";
+  globalThis.fetch = async url => { defaultSearch = String(url); return Response.json({ hits: [{ event: event() }] }); };
+  await searchEvents("макет", new AbortController().signal, 1);
+  assert.match(defaultSearch, /workspace_id=1/);
 });
 
 test("workspace API validates payload and listEvents sends workspace_id", async () => {

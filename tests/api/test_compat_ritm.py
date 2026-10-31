@@ -234,6 +234,8 @@ def test_message_requires_confirmation_and_restores_history(
     assert last["kind"] == "confirm"
     assert last["active_confirmation"] is True
     assert last["pending_color"] == "#2255aa"
+    assert last["expecting"] == "confirmation"
+    assert last["suggestions"] == ["Да", "Нет"]
 
     cancelled = client.post(
         "/api/message",
@@ -285,6 +287,53 @@ def test_message_requires_confirmation_and_restores_history(
         json={"session_id": "chat-1", "request_id": "msg-yes", "text": "Нет"},
     )
     assert clash.status_code == 409
+
+
+def test_message_update_waits_for_confirmation(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    created = client.post(
+        "/api/events",
+        json={
+            "type": "task",
+            "title": "Документ task",
+            "request_id": "rename-src",
+        },
+    )
+    assert created.status_code == 200, created.text
+    event_id = created.json()["events"][0]["id"]
+    _stub_llm(
+        monkeypatch,
+        {
+            "action": "update",
+            "reply": "Переименую после подтверждения",
+            "item_id": event_id,
+            "item": {"title": "Новый документ task"},
+        },
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "rename-1",
+            "request_id": "rename-ask",
+            "text": "Переименуй задачу «Документ task» в «Новый документ task»",
+            "require_confirmation": True,
+        },
+    )
+    assert asked.status_code == 200, asked.text
+    assert asked.json()["kind"] == "confirm"
+    assert asked.json()["proposal"]["title"] == "Новый документ task"
+    assert asked.json()["expecting"] == "confirmation"
+    assert client.get("/api/events").json()["events"][0]["title"] == "Документ task"
+
+    confirmed = client.post(
+        "/api/message",
+        json={"session_id": "rename-1", "request_id": "rename-yes", "text": "Да"},
+    )
+    assert confirmed.json()["kind"] == "updated"
+    assert confirmed.json()["events"][0]["title"] == "Новый документ task"
+    assert client.get("/api/events").json()["events"][0]["title"] == "Новый документ task"
 
 
 def test_message_without_confirmation_writes_immediately(

@@ -62,10 +62,10 @@ import { workspaceUrl } from "./lib/api.js";
   const micTimer = document.getElementById("mic-timer");
   const cardData = new WeakMap();
   const patching = new Set();
-  let activeWorkspaceId = workspaceStore.currentId || 1;
+  let activeWorkspaceId = Number.isSafeInteger(workspaceStore.currentId) ? workspaceStore.currentId : null;
   let workspaceReady = false;
   const workspaceDrafts = new Map();
-  const pendingKey = () => activeWorkspaceId === 1 ? "ritm.pending" : "ritm.pending.workspace." + activeWorkspaceId;
+  const pendingKey = () => "ritm.pending.workspace." + (activeWorkspaceId || "none");
 
   const state = {
     sessionId: "",
@@ -889,6 +889,7 @@ import { workspaceUrl } from "./lib/api.js";
     const generation = ++state.historyGeneration;
     const sessionId = state.sessionId;
     const workspaceId = activeWorkspaceId;
+    if (!Number.isSafeInteger(workspaceId) || workspaceId < 1) return;
     historyStatus.hidden = false;
     historyStatus.textContent = "Загружаю диалог…";
     liveStatus.textContent = "Загружаю диалог…";
@@ -1829,7 +1830,8 @@ import { workspaceUrl } from "./lib/api.js";
     if (state.sending || state.recording || state.localFinishing || state.deleteFlight || state.confirm || patching.size) event.preventDefault();
   });
   window.addEventListener("ritm:workspace-changed", event => {
-    const next = event.detail.id || 1;
+    const next = event.detail && event.detail.id;
+    if (!Number.isSafeInteger(next) || next < 1) return;
     if (workspaceReady && next === activeWorkspaceId) return;
     if (workspaceReady) workspaceDrafts.set(activeWorkspaceId, messageInput.value);
     else workspaceDrafts.set(next, messageInput.value);

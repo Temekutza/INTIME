@@ -126,12 +126,13 @@ def main() -> None:
 
             cur.execute(
                 """
-                SELECT u.login, p.item_type_code, COUNT(*)
+                SELECT u.login, w.name, p.item_type_code, COUNT(*)
                 FROM planner_items AS p
                 JOIN users AS u ON u.id = p.user_id
-                WHERE u.login = ANY(%s)
-                GROUP BY u.login, p.item_type_code
-                ORDER BY u.login, p.item_type_code
+                JOIN workspaces AS w ON w.id = p.workspace_id
+                WHERE u.login = ANY(%s) AND p.deleted_at IS NULL
+                GROUP BY u.login, w.name, w.is_default, p.item_type_code
+                ORDER BY u.login, w.is_default DESC, w.name, p.item_type_code
                 """,
                 (logins,),
             )
@@ -152,8 +153,8 @@ def main() -> None:
             extras = cur.fetchone()
 
     print(f"Загружено пользователей: {len(fixtures)}")
-    for login, type_code, count in item_rows:
-        print(f"  {login} {type_code}: {count}")
+    for login, space, type_code, count in item_rows:
+        print(f"  {login} / {space} / {type_code}: {count}")
     if extras:
         print(
             "  цвета типов: {0}, отправки: {1}, разговоры: {2}, "

@@ -75,8 +75,11 @@ async def _bind_workspace(session: AsyncSession, user: User, item: ItemCreate) -
     return item.model_copy(update={"workspace_id": workspace_id})
 
 
-def _session_key(value: str | None) -> str:
-    return (value or "default").strip() or "default"
+def _session_key(value: str | None, workspace_id: int | None = None) -> str:
+    base = (value or "default").strip() or "default"
+    if workspace_id is None:
+        return base
+    return f"ws:{workspace_id}:{base}"
 
 
 def _request_key(value: str | None) -> str:
@@ -164,11 +167,30 @@ def _pcm_to_wav(payload: bytes, sample_rate: int = 16000) -> bytes:
     return header + payload
 
 
-async def _ritm(session: AsyncSession, user: User, item_id: int) -> RitmEvent:
-    found = await item_repository.get_item(session, user.id, item_id)
+async def _owned_item(
+    session: AsyncSession,
+    user: User,
+    event_id: int,
+    workspace_id: int | None = None,
+) -> tuple:
+    if workspace_id is not None:
+        await workspace_service.get_owned(session, user, workspace_id)
+    found = await item_repository.get_item(session, user.id, event_id)
     if found is None:
         raise NotFound("Запись не найдена")
     item, status = found
+    if workspace_id is not None and item.workspace_id != workspace_id:
+        raise NotFound("Запись не найдена")
+    return item, status
+
+
+async def _ritm(
+    session: AsyncSession,
+    user: User,
+    item_id: int,
+    workspace_id: int | None = None,
+) -> RitmEvent:
+    item, status = await _owned_item(session, user, item_id, workspace_id)
     return event_from_item(item, status, user.timezone)
 
 
@@ -244,9 +266,16 @@ def _item_from_payload(payload: dict, timezone: str) -> ItemCreate:
     )
 
 
-async def _conversation(session: AsyncSession, user: User, session_id: str | None):
+async def _conversation(
+    session: AsyncSession,
+    user: User,
+    session_id: str | None,
+    workspace_id: int | None = None,
+):
+    if workspace_id is not None:
+        await workspace_service.get_owned(session, user, workspace_id)
     return await assistant_repository.get_or_create_conversation(
-        session, user.id, _session_key(session_id)
+        session, user.id, _session_key(session_id, workspace_id)
     )
 
 
@@ -400,8 +429,13 @@ async def list_events(
     return EventListResponse(events=events)
 
 
-async def get_event(session: AsyncSession, user: User, event_id: int) -> RitmEvent:
-    return await _ritm(session, user, event_id)
+async def get_event(
+    session: AsyncSession,
+    user: User,
+    event_id: int,
+    workspace_id: int | None = None,
+) -> RitmEvent:
+    return await _ritm(session, user, event_id, workspace_id)
 
 
 async def search_events(
@@ -450,7 +484,7 @@ async def create_event(
     )
     item = await _bind_workspace(session, user, item)
     payload = _payload_from_request(data, item, user.timezone)
-    conversation = await _conversation(session, user, data.session_id)
+    conversation = await _conversation(session, user, data.session_id, data.workspace_id)
     request_id = _request_key(data.request_id)
     if data.request_id:
         existing = await assistant_repository.get_proposal(
@@ -505,12 +539,13 @@ async def create_event(
 
 
 async def patch_event(
-    session: AsyncSession, user: User, event_id: int, data: EventPatchRequest
+    session: AsyncSession,
+    user: User,
+    event_id: int,
+    data: EventPatchRequest,
+    workspace_id: int | None = None,
 ) -> RitmEvent:
-    found = await item_repository.get_item(session, user.id, event_id)
-    if found is None:
-        raise NotFound("Запись не найдена")
-    item, current_status = found
+    item, current_status = await _owned_item(session, user, event_id, workspace_id)
     fields = data.model_dump(exclude_unset=True)
     ensure_plain(fields.get("title"))
     if "title" in fields:
@@ -554,7 +589,13 @@ async def patch_event(
     return event_from_item(item, status.code, user.timezone)
 
 
-async def delete_event(session: AsyncSession, user: User, event_id: int) -> None:
+async def delete_event(
+    session: AsyncSession,
+    user: User,
+    event_id: int,
+    workspace_id: int | None = None,
+) -> None:
+    await _owned_item(session, user, event_id, workspace_id)
     await item_service.delete_item(session, user, event_id)
 
 
@@ -584,12 +625,14 @@ async def set_default_color(
 
 
 async def set_event_color(
-    session: AsyncSession, user: User, event_id: int, color: str | None
+    session: AsyncSession,
+    user: User,
+    event_id: int,
+    color: str | None,
+    workspace_id: int | None = None,
 ) -> ColorOverrideResponse:
-    found = await item_repository.get_item(session, user.id, event_id)
-    if found is None:
-        raise NotFound("Запись не найдена")
-    found[0].color = color
+    item, _status = await _owned_item(session, user, event_id, workspace_id)
+    item.color = color
     await persist(session)
     return ColorOverrideResponse(event_id=event_id, color=color)
 
@@ -615,6 +658,10 @@ async def _confirm_pending(
     pending: AssistantProposal,
     data: MessageRequest,
 ) -> ReplyResponse:
+    if pending.action == "update":
+        return await _apply_pending_update(
+            session, user, conversation_id, request_id, pending, data
+        )
     payload = dict(pending.payload)
     payload["color"] = _chosen_color(data, payload)
     if not payload.get("complete"):
@@ -691,10 +738,136 @@ async def _reject_pending(
     return _reply(kind="cancelled", text=text, request_id=request_id, proposal=pending.payload)
 
 
+def _update_preview_card(event: RitmEvent, update: dict | None, color: str | None) -> dict:
+    raw = dict(update or {})
+    title = raw.get("title")
+    if not isinstance(title, str) or not title.strip():
+        title = event.title
+    else:
+        title = title.strip()
+    card = proposal_card(
+        item_type=event.type,
+        title=title,
+        day=event.date,
+        clock=event.time,
+        duration_min=event.duration_min,
+        color=color,
+        is_deadline=event.is_deadline,
+        intent="update",
+    )
+    card["item_id"] = event.id
+    card["workspace_id"] = event.workspace_id
+    card["update"] = raw
+    card["complete"] = True
+    card["fingerprint"] = _fingerprint(card)
+    return card
+
+
+async def _apply_pending_update(
+    session: AsyncSession,
+    user: User,
+    conversation_id: int,
+    request_id: str,
+    pending: AssistantProposal,
+    data: MessageRequest,
+) -> ReplyResponse:
+    payload = dict(pending.payload)
+    item_id = payload.get("item_id")
+    if not isinstance(item_id, int):
+        raise Unprocessable("Модель не указала запись")
+    workspace_id = payload.get("workspace_id")
+    space_id = workspace_id if isinstance(workspace_id, int) else data.workspace_id
+    await _owned_item(session, user, item_id, space_id)
+    await item_service.update_item(
+        session, user, item_id, assistant_service._update_payload(payload.get("update"))
+    )
+    pending.status = "confirmed"
+    pending.payload = payload
+    pending.result_item_id = item_id
+    pending.resolved_at = datetime.now(timezone.utc)
+    event = await _ritm(session, user, item_id)
+    text = "Запись обновлена"
+    await _store_turn(
+        session,
+        conversation_id,
+        request_id=request_id,
+        user_text=data.text,
+        kind="updated",
+        assistant_text=text,
+    )
+    return _reply(
+        kind="updated",
+        text=text,
+        request_id=request_id,
+        events=[event],
+        proposal=payload,
+    )
+
+
+async def _handle_update(
+    session: AsyncSession,
+    user: User,
+    conversation_id: int,
+    request_id: str,
+    data: MessageRequest,
+    command,
+) -> ReplyResponse:
+    if command.item_id is None:
+        raise Unprocessable("Модель не указала запись")
+    try:
+        event = await _ritm(session, user, command.item_id, data.workspace_id)
+    except NotFound:
+        text = "Не нашла эту запись в текущем пространстве."
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="info",
+            assistant_text=text,
+        )
+        return _reply(kind="info", text=text, request_id=request_id)
+    payload = _update_preview_card(event, command.item, _chosen_color(data))
+    if data.require_confirmation:
+        await _put_pending(session, conversation_id, request_id, payload, action="update")
+        text = command.reply.strip() or "Проверьте изменения и подтвердите."
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="confirm",
+            assistant_text=text,
+        )
+        return _reply(
+            kind="confirm",
+            text=text,
+            request_id=request_id,
+            proposal=payload,
+            suggestions=["Да", "Нет"],
+            expecting="confirmation",
+        )
+    await assistant_repository.reject_open(session, conversation_id)
+    await item_service.update_item(
+        session, user, command.item_id, assistant_service._update_payload(command.item)
+    )
+    event = await _ritm(session, user, command.item_id, data.workspace_id)
+    text = command.reply.strip() or "Запись обновлена"
+    await _store_turn(
+        session,
+        conversation_id,
+        request_id=request_id,
+        user_text=data.text,
+        kind="updated",
+        assistant_text=text,
+    )
+    return _reply(kind="updated", text=text, request_id=request_id, events=[event], proposal=payload)
+
+
 async def handle_message(
     session: AsyncSession, user: User, data: MessageRequest
 ) -> ReplyResponse:
-    conversation = await _conversation(session, user, data.session_id)
+    conversation = await _conversation(session, user, data.session_id, data.workspace_id)
     request_id = _request_key(data.request_id)
     if data.request_id:
         user_row = await assistant_repository.user_message_for_request(
@@ -734,8 +907,6 @@ async def handle_message(
 
     phrase = match_list_phrase(spoken, assistant_service.local_now(user))
     space_id = data.workspace_id
-    if space_id is not None:
-        await workspace_service.get_owned(session, user, space_id)
     if phrase is not None:
         return await _answer_list(session, user, conversation.id, request_id, data, phrase, space_id)
     history = await assistant_repository.list_messages(session, conversation.id, 20)
@@ -763,23 +934,9 @@ async def handle_message(
     if command.action == "delete":
         return await _handle_delete(session, user, conversation.id, request_id, data, spoken)
     if command.action == "update":
-        await assistant_repository.reject_open(session, conversation.id)
-        if command.item_id is None:
-            raise Unprocessable("Модель не указала запись")
-        await item_service.update_item(
-            session, user, command.item_id, assistant_service._update_payload(command.item)
+        return await _handle_update(
+            session, user, conversation.id, request_id, data, command
         )
-        event = await _ritm(session, user, command.item_id)
-        text = command.reply.strip() or "Запись обновлена"
-        await _store_turn(
-            session,
-            conversation.id,
-            request_id=request_id,
-            user_text=data.text,
-            kind="updated",
-            assistant_text=text,
-        )
-        return _reply(kind="updated", text=text, request_id=request_id, events=[event])
     return await _handle_none(session, user, conversation.id, request_id, data, command, pending)
 
 
@@ -1185,10 +1342,16 @@ async def _handle_none(
 
 
 async def history(
-    session: AsyncSession, user: User, session_id: str | None, limit: int
+    session: AsyncSession,
+    user: User,
+    session_id: str | None,
+    limit: int,
+    workspace_id: int | None = None,
 ) -> HistoryResponse:
+    if workspace_id is not None:
+        await workspace_service.get_owned(session, user, workspace_id)
     conversation = await assistant_repository.get_conversation(
-        session, user.id, _session_key(session_id)
+        session, user.id, _session_key(session_id, workspace_id)
     )
     if conversation is None:
         return HistoryResponse(messages=[])
@@ -1225,11 +1388,19 @@ async def history(
                 item["resolution"] = "declined"
             else:
                 item["resolution"] = None
-        if index == last_assistant and pending_color is not None:
-            item["pending_color"] = pending_color
-            if pending is not None and pending.status == "pending":
-                item["proposal"] = _public_proposal(pending.payload)
-                item["active_confirmation"] = pending.status == "pending" and (row.kind == "confirm")
+        if index == last_assistant and pending is not None and pending.status == "pending":
+            if pending_color is not None:
+                item["pending_color"] = pending_color
+            item["proposal"] = _public_proposal(pending.payload)
+            item["active_confirmation"] = row.kind == "confirm"
+            if row.kind == "confirm":
+                item["expecting"] = "confirmation"
+                item["suggestions"] = ["Да", "Нет"]
+            elif row.kind in {"choice", "clarify"}:
+                item["expecting"] = "choice"
+        elif item.get("active_confirmation") and row.kind == "confirm":
+            item["expecting"] = "confirmation"
+            item["suggestions"] = ["Да", "Нет"]
         out.append(item)
     return HistoryResponse(messages=out)
 

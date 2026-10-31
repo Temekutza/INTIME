@@ -4,7 +4,7 @@
 Описание набора — в testdescription.md, его нужно обновлять вместе с этим файлом.
 """
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -12,37 +12,6 @@ DEFAULT_WORKSPACE = "Общее пространство"
 WORK_WORKSPACE = "Работа"
 PERSONAL_WORKSPACE = "Личное"
 ANNA_WORKSPACES = (WORK_WORKSPACE, PERSONAL_WORKSPACE)
-ANNA_WORK_TITLES = frozenset(
-    {
-        "Сдать отчёт",
-        "Позвонить клиенту",
-        "Подготовить слайды",
-        "Переезд сервера",
-        "Стендап",
-        "Демо заказчику",
-        "Планёрка",
-        "Созвон с подрядчиком",
-        "Воркшоп",
-        "Дежурство",
-        "Быстрый вопрос",
-        "Ретроспектива",
-        "Забрать пропуск",
-    }
-)
-ANNA_PERSONAL_TITLES = frozenset(
-    {
-        "Оплатить интернет",
-        "Записаться к врачу",
-        "Разобрать почту",
-        "Черновик статьи",
-        "Налоги",
-        "Старый черновик",
-        "Позвонить маме",
-        "Оплатить парковку",
-        "Отменить подписку",
-        "Продлить домен",
-    }
-)
 
 PASSWORD = "testpass"
 
@@ -138,8 +107,80 @@ def _at(day: date, hour: int, minute: int, timezone: str) -> datetime:
 def _anna(now: datetime) -> tuple[Item, ...]:
     tz = "Europe/Moscow"
     today = _day(now, tz)
-    items = (
-        Item("task", "todo", "Купить молоко", priority="medium"),
+    general = (
+        Item(
+            "task",
+            "todo",
+            "Купить молоко",
+            priority="medium",
+            workspace=DEFAULT_WORKSPACE,
+        ),
+        Item(
+            "task",
+            "todo",
+            "Купить хлеб",
+            due_on=today,
+            priority="important",
+            workspace=DEFAULT_WORKSPACE,
+        ),
+        Item(
+            "task",
+            "done",
+            "Протереть пол",
+            due_on=_day(now, tz, -2),
+            completed_at=_at(_day(now, tz, -2), 20, 0, tz),
+            workspace=DEFAULT_WORKSPACE,
+        ),
+        Item(
+            "meeting",
+            "scheduled",
+            "Планирование выходных",
+            description="Что делаем в субботу и воскресенье",
+            start_at=_at(today, 19, 0, tz),
+            end_at=_at(today, 19, 30, tz),
+            workspace=DEFAULT_WORKSPACE,
+        ),
+        Item(
+            "meeting",
+            "scheduled",
+            "Поход в кино",
+            start_at=_at(_day(now, tz, 2), 18, 0, tz),
+            end_at=_at(_day(now, tz, 2), 20, 30, tz),
+            workspace=DEFAULT_WORKSPACE,
+        ),
+        Item(
+            "meeting",
+            "done",
+            "Созвон с родителями",
+            start_at=_at(_day(now, tz, -1), 20, 0, tz),
+            end_at=_at(_day(now, tz, -1), 20, 40, tz),
+            completed_at=_at(_day(now, tz, -1), 20, 40, tz),
+            workspace=DEFAULT_WORKSPACE,
+        ),
+        Item(
+            "reminder",
+            "pending",
+            "Выпить воду",
+            remind_at=now.astimezone(ZoneInfo(tz)).replace(microsecond=0) + timedelta(hours=1),
+            workspace=DEFAULT_WORKSPACE,
+        ),
+        Item(
+            "reminder",
+            "pending",
+            "Полить цветы",
+            remind_at=_at(_day(now, tz, 1), 9, 0, tz),
+            workspace=DEFAULT_WORKSPACE,
+        ),
+        Item(
+            "reminder",
+            "done",
+            "Вынести мусор",
+            remind_at=_at(_day(now, tz, -1), 21, 0, tz),
+            completed_at=_at(_day(now, tz, -1), 21, 10, tz),
+            workspace=DEFAULT_WORKSPACE,
+        ),
+    )
+    work = (
         Item(
             "task",
             "todo",
@@ -148,15 +189,8 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             due_on=today,
             priority="urgent",
             color="#be5766",
+            workspace=WORK_WORKSPACE,
         ),
-        Item(
-            "task",
-            "todo",
-            "Оплатить интернет",
-            due_on=_day(now, tz, -1),
-            priority="important",
-        ),
-        Item("task", "todo", "Записаться к врачу", due_on=_day(now, tz, 7), priority="low"),
         Item(
             "task",
             "in_progress",
@@ -164,6 +198,7 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             due_at=_at(today, 18, 0, tz),
             remind_at=_at(today, 17, 30, tz),
             priority="urgent",
+            workspace=WORK_WORKSPACE,
         ),
         Item(
             "task",
@@ -172,43 +207,14 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             start_at=_at(today, 14, 0, tz),
             end_at=_at(today, 16, 0, tz),
             due_at=_at(today, 16, 0, tz),
-        ),
-        Item(
-            "task",
-            "done",
-            "Разобрать почту",
-            description="Входящие за неделю",
-            due_on=_day(now, tz, -3),
-            completed_at=_at(_day(now, tz, -3), 18, 0, tz),
+            workspace=WORK_WORKSPACE,
         ),
         Item(
             "task",
             "cancelled",
             "Переезд сервера",
             due_at=_at(_day(now, tz, 2), 11, 0, tz),
-        ),
-        Item(
-            "task",
-            "todo",
-            "Черновик статьи",
-            start_at=_at(_day(now, tz, 1), 10, 0, tz),
-            due_on=_day(now, tz, 1),
-        ),
-        Item(
-            "task",
-            "todo",
-            "Налоги",
-            due_at=_at(_day(now, tz, 30), 12, 0, tz),
-            remind_at=_at(_day(now, tz, 29), 9, 0, tz),
-            priority="important",
-        ),
-        Item(
-            "task",
-            "todo",
-            "Старый черновик",
-            description="Мягко удалена, в списках не показывается",
-            due_on=_day(now, tz, -10),
-            deleted_at=_at(_day(now, tz, -2), 12, 0, tz),
+            workspace=WORK_WORKSPACE,
         ),
         Item(
             "meeting",
@@ -217,6 +223,7 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             start_at=_at(today, 10, 0, tz),
             end_at=_at(today, 10, 15, tz),
             remind_at=_at(today, 9, 50, tz),
+            workspace=WORK_WORKSPACE,
         ),
         Item(
             "meeting",
@@ -226,6 +233,7 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             start_at=_at(today, 15, 0, tz),
             end_at=_at(today, 16, 0, tz),
             color="#2255aa",
+            workspace=WORK_WORKSPACE,
         ),
         Item(
             "meeting",
@@ -234,6 +242,7 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             start_at=_at(_day(now, tz, -1), 11, 0, tz),
             end_at=_at(_day(now, tz, -1), 12, 0, tz),
             completed_at=_at(_day(now, tz, -1), 12, 0, tz),
+            workspace=WORK_WORKSPACE,
         ),
         Item(
             "meeting",
@@ -241,6 +250,7 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             "Созвон с подрядчиком",
             start_at=_at(_day(now, tz, 1), 13, 0, tz),
             end_at=_at(_day(now, tz, 1), 13, 30, tz),
+            workspace=WORK_WORKSPACE,
         ),
         Item(
             "meeting",
@@ -248,6 +258,7 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             "Воркшоп",
             start_at=_at(_day(now, tz, 3), 9, 0, tz),
             end_at=_at(_day(now, tz, 3), 13, 0, tz),
+            workspace=WORK_WORKSPACE,
         ),
         Item(
             "meeting",
@@ -255,12 +266,14 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             "Дежурство",
             start_at=_at(today, 23, 0, tz),
             end_at=_at(_day(now, tz, 1), 1, 0, tz),
+            workspace=WORK_WORKSPACE,
         ),
         Item(
             "meeting",
             "scheduled",
             "Быстрый вопрос",
             start_at=_at(_day(now, tz, 1), 9, 0, tz),
+            workspace=WORK_WORKSPACE,
         ),
         Item(
             "meeting",
@@ -270,24 +283,122 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             start_at=_at(_day(now, tz, -5), 16, 0, tz),
             end_at=_at(_day(now, tz, -5), 17, 0, tz),
             completed_at=_at(_day(now, tz, -5), 17, 0, tz),
-        ),
-        Item(
-            "reminder",
-            "pending",
-            "Выпить воду",
-            remind_at=now.astimezone(ZoneInfo(tz)).replace(microsecond=0) + timedelta(hours=1),
+            workspace=WORK_WORKSPACE,
         ),
         Item(
             "reminder",
             "pending",
             "Забрать пропуск",
             remind_at=_at(_day(now, tz, 1), 9, 0, tz),
+            workspace=WORK_WORKSPACE,
+        ),
+        Item(
+            "reminder",
+            "pending",
+            "Отправить протокол стендапа",
+            remind_at=_at(today, 12, 0, tz),
+            workspace=WORK_WORKSPACE,
+        ),
+        Item(
+            "reminder",
+            "done",
+            "Проверить стенд",
+            remind_at=_at(_day(now, tz, -1), 9, 30, tz),
+            completed_at=_at(_day(now, tz, -1), 9, 40, tz),
+            workspace=WORK_WORKSPACE,
+        ),
+    )
+    personal = (
+        Item(
+            "task",
+            "todo",
+            "Оплатить интернет",
+            due_on=_day(now, tz, -1),
+            priority="important",
+            workspace=PERSONAL_WORKSPACE,
+        ),
+        Item(
+            "task",
+            "todo",
+            "Записаться к врачу",
+            due_on=_day(now, tz, 7),
+            priority="low",
+            workspace=PERSONAL_WORKSPACE,
+        ),
+        Item(
+            "task",
+            "todo",
+            "Забрать куртку из химчистки",
+            due_on=today,
+            priority="medium",
+            workspace=PERSONAL_WORKSPACE,
+        ),
+        Item(
+            "task",
+            "done",
+            "Разобрать почту",
+            description="Входящие за неделю",
+            due_on=_day(now, tz, -3),
+            completed_at=_at(_day(now, tz, -3), 18, 0, tz),
+            workspace=PERSONAL_WORKSPACE,
+        ),
+        Item(
+            "task",
+            "todo",
+            "Черновик статьи",
+            start_at=_at(_day(now, tz, 1), 10, 0, tz),
+            due_on=_day(now, tz, 1),
+            workspace=PERSONAL_WORKSPACE,
+        ),
+        Item(
+            "task",
+            "todo",
+            "Налоги",
+            due_at=_at(_day(now, tz, 30), 12, 0, tz),
+            remind_at=_at(_day(now, tz, 29), 9, 0, tz),
+            priority="important",
+            workspace=PERSONAL_WORKSPACE,
+        ),
+        Item(
+            "task",
+            "todo",
+            "Старый черновик",
+            description="Мягко удалена, в списках не показывается",
+            due_on=_day(now, tz, -10),
+            deleted_at=_at(_day(now, tz, -2), 12, 0, tz),
+            workspace=PERSONAL_WORKSPACE,
+        ),
+        Item(
+            "meeting",
+            "scheduled",
+            "Тренировка",
+            start_at=_at(today, 18, 0, tz),
+            end_at=_at(today, 19, 0, tz),
+            workspace=PERSONAL_WORKSPACE,
+        ),
+        Item(
+            "meeting",
+            "scheduled",
+            "Ужин с друзьями",
+            start_at=_at(_day(now, tz, 2), 19, 0, tz),
+            end_at=_at(_day(now, tz, 2), 21, 0, tz),
+            workspace=PERSONAL_WORKSPACE,
+        ),
+        Item(
+            "meeting",
+            "done",
+            "Прогулка в парке",
+            start_at=_at(_day(now, tz, -2), 11, 0, tz),
+            end_at=_at(_day(now, tz, -2), 12, 30, tz),
+            completed_at=_at(_day(now, tz, -2), 12, 30, tz),
+            workspace=PERSONAL_WORKSPACE,
         ),
         Item(
             "reminder",
             "pending",
             "Позвонить маме",
             remind_at=_at(_day(now, tz, -1), 8, 0, tz),
+            workspace=PERSONAL_WORKSPACE,
         ),
         Item(
             "reminder",
@@ -295,41 +406,53 @@ def _anna(now: datetime) -> tuple[Item, ...]:
             "Оплатить парковку",
             remind_at=_at(_day(now, tz, -1), 19, 0, tz),
             completed_at=_at(_day(now, tz, -1), 19, 0, tz),
+            workspace=PERSONAL_WORKSPACE,
         ),
         Item(
             "reminder",
             "cancelled",
             "Отменить подписку",
             remind_at=_at(_day(now, tz, 2), 12, 0, tz),
+            workspace=PERSONAL_WORKSPACE,
         ),
         Item(
             "reminder",
             "pending",
             "Продлить домен",
             remind_at=_at(_day(now, tz, 14), 8, 0, tz),
+            workspace=PERSONAL_WORKSPACE,
         ),
     )
-    tagged = []
-    for item in items:
-        if item.title in ANNA_WORK_TITLES:
-            tagged.append(replace(item, workspace=WORK_WORKSPACE))
-        elif item.title in ANNA_PERSONAL_TITLES:
-            tagged.append(replace(item, workspace=PERSONAL_WORKSPACE))
-        else:
-            tagged.append(replace(item, workspace=DEFAULT_WORKSPACE))
-    return tuple(tagged)
+    return general + work + personal
 
 
 def _boris(now: datetime) -> tuple[Item, ...]:
     tz = "Asia/Yekaterinburg"
+    today = _day(now, tz)
     return (
-        Item("task", "todo", "Закрыть тикеты", due_on=_day(now, tz), priority="important"),
+        Item(
+            "task",
+            "todo",
+            "Закрыть тикеты",
+            due_on=today,
+            priority="important",
+            workspace=DEFAULT_WORKSPACE,
+        ),
         Item(
             "task",
             "done",
             "Код-ревью",
             due_at=_at(_day(now, tz, -1), 17, 0, tz),
             completed_at=_at(_day(now, tz, -1), 17, 0, tz),
+            workspace=DEFAULT_WORKSPACE,
+        ),
+        Item(
+            "meeting",
+            "scheduled",
+            "Синк по релизам",
+            start_at=_at(today, 11, 0, tz),
+            end_at=_at(today, 11, 30, tz),
+            workspace=DEFAULT_WORKSPACE,
         ),
         Item(
             "meeting",
@@ -337,32 +460,45 @@ def _boris(now: datetime) -> tuple[Item, ...]:
             "Созвон с Анной",
             start_at=_at(_day(now, tz, 1), 12, 0, tz),
             end_at=_at(_day(now, tz, 1), 12, 45, tz),
+            workspace=DEFAULT_WORKSPACE,
         ),
         Item(
             "reminder",
             "pending",
             "Забрать посылку",
             remind_at=_at(_day(now, tz, 1), 18, 0, tz),
+            workspace=DEFAULT_WORKSPACE,
         ),
     )
 
 
 def _clara(now: datetime) -> tuple[Item, ...]:
     tz = "UTC"
+    today = _day(now, tz)
     return (
-        Item("task", "todo", "Идея для пет-проекта"),
+        Item("task", "todo", "Идея для пет-проекта", workspace=DEFAULT_WORKSPACE),
+        Item(
+            "task",
+            "todo",
+            "Прочитать RFC",
+            due_on=today,
+            priority="low",
+            workspace=DEFAULT_WORKSPACE,
+        ),
         Item(
             "meeting",
             "scheduled",
             "Интервью",
             start_at=_at(_day(now, tz, 4), 15, 0, tz),
             end_at=_at(_day(now, tz, 4), 15, 30, tz),
+            workspace=DEFAULT_WORKSPACE,
         ),
         Item(
             "reminder",
             "pending",
             "Проверить CI",
             remind_at=_at(_day(now, tz, 1), 7, 0, tz),
+            workspace=DEFAULT_WORKSPACE,
         ),
     )
 

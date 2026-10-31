@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { calendarRange, movePeriod, daySegments } from "../lib/calendar.js";
+import { calendarRange, movePeriod, daySegments, calendarDayCaption } from "../lib/calendar.js";
 const event = (id, extra = {}) => ({ id, type: "meeting", title: "Встреча", date: "2026-10-30", time: "12:00", duration_min: 60, status: "planned", ...extra });
 
 test("calendar clamps month/year navigation and weeks start Monday", () => {
@@ -17,6 +17,18 @@ test("calendar splits overnight intervals and assigns separate overlap lanes", (
   assert.equal(rows.length, 2); assert.equal(rows[0].start, next.getTime());
   assert.equal(rows[0].end - rows[0].start, 3600000);
   assert.equal(rows[0].lanes, 2); assert.notEqual(rows[0].lane, rows[1].lane);
+});
+
+test("day heading includes month and year instead of the number alone", () => {
+  const caption = calendarDayCaption(new Date(2026, 9, 31), true);
+  assert.equal(caption.weekday, "Сб");
+  assert.equal(caption.number, "31");
+  assert.match(caption.month, /октября/i);
+  assert.match(caption.month, /2026/);
+  const week = calendarDayCaption(new Date(2026, 9, 31), false);
+  assert.equal(week.number, "31");
+  assert.match(week.month, /окт/i);
+  assert.doesNotMatch(week.month, /^31\b/);
 });
 
 test("short hit areas reserve lanes without inventing event duration", () => {

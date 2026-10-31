@@ -17,6 +17,18 @@ export function calendarRange(selected, mode) {
   if (mode === "year") return { start: new Date(date.getFullYear(), 0, 1), end: new Date(date.getFullYear() + 1, 0, 1) };
   return { start: date, end: addDays(date, 1) };
 }
+/** Подпись колонки: число, месяц в родительном падеже и в дневном виде год. @param {Date} day @param {boolean} full */
+export function calendarDayCaption(day, full) {
+  const weekday = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][day.getDay()];
+  const number = String(day.getDate());
+  const month = day
+    .toLocaleDateString("ru-RU", full ? { day: "numeric", month: "long", year: "numeric" } : { day: "numeric", month: "short" })
+    .replace(/^\d+\s+/u, "")
+    .replace(/\s*г\.$/u, "")
+    .replace(/\.$/u, "");
+  return { weekday, number, month };
+}
+
 /** @param {string} selected @param {CalendarMode} mode @param {number} direction */
 export function movePeriod(selected, mode, direction) {
   const date = dayDate(selected);
@@ -111,6 +123,7 @@ export function renderCalendarView(host, events, selected, mode, open, choose) {
     host.append(grid); return;
   }
   const days = mode === "week" ? 7 : 1, shell = el("div", "time-calendar");
+  shell.classList.toggle("is-single-day", days === 1);
   shell.style.setProperty("--days", String(days));
   const headings = el("div", "time-calendar__headings");
   const offset = -clock.now().getTimezoneOffset() / 60;
@@ -122,7 +135,12 @@ export function renderCalendarView(host, events, selected, mode, open, choose) {
   for (let index = 0; index < days; index++) {
     const day = addDays(range.start, index), iso = isoDay(day), today = iso === isoDay(clock.now());
     const heading = button("", "time-calendar__day-heading", () => choose(iso));
-    heading.append(el("span", "", ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"][day.getDay()]), el("strong", "", String(day.getDate())));
+    const caption = calendarDayCaption(day, days === 1);
+    heading.append(
+      el("span", "time-calendar__weekday", caption.weekday),
+      el("strong", "", caption.number),
+      el("span", "time-calendar__month", caption.month),
+    );
     heading.setAttribute("aria-label", formatDate(iso));
     heading.classList.toggle("is-today", today); headings.append(heading);
     const withoutTime = el("div", ""); for (const event of events.filter(item => item.date === iso && !item.time)) withoutTime.append(eventButton(event, open)); allDay.append(withoutTime);

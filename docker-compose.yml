@@ -91,6 +91,18 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # Backend в bridge-сети не видит 127.0.0.1:4000. Слушаем только docker0.
+  litellm-docker:
+    image: python:3.12-slim
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      litellm:
+        condition: service_healthy
+    volumes:
+      - ./llm/gateway/docker_bridge.py:/bridge.py:ro
+    command: ["python", "-u", "/bridge.py"]
+
 volumes:
   postgres_data:
   litellm_postgres_data:

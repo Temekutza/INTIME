@@ -7,6 +7,7 @@
 import fcntl
 import socket
 import struct
+import sys
 import threading
 
 TARGET = ("127.0.0.1", 4000)
@@ -62,5 +63,17 @@ def main() -> None:
         threading.Thread(target=_handle, args=(client,), daemon=True).start()
 
 
+def healthcheck() -> int:
+    try:
+        host = docker0_address()
+        conn = socket.create_connection((host, TARGET[1]), timeout=5)
+        conn.close()
+    except OSError:
+        return 1
+    return 0
+
+
 if __name__ == "__main__":
+    if sys.argv[1:] == ["--health"]:
+        raise SystemExit(healthcheck())
     main()

@@ -1,10 +1,11 @@
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from sqlalchemy import text
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.compat.deps import CompatUser
+from app.api.v1.health import readiness_response
 from app.core.database import get_session
 from app.schemas.ritm import (
     ColorBody,
@@ -29,9 +30,8 @@ router = APIRouter()
 
 
 @router.get("/health")
-async def health(session: Annotated[AsyncSession, Depends(get_session)]) -> dict[str, str]:
-    await session.execute(text("SELECT 1"))
-    return {"status": "ok", "database": "ok"}
+async def health() -> JSONResponse:
+    return await readiness_response()
 
 
 @router.get("/events", response_model=EventListResponse)

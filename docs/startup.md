@@ -16,7 +16,7 @@
 cp .env.example .env
 ```
 
-В `.env` задайте пароли Postgres и параметры шлюза:
+В `.env` задайте пароли Postgres и параметры шлюза. Compose без них не поднимет `litellm*`:
 
 - `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
 - `LITELLM_MASTER_KEY` — только для выпуска ключей, приложениям его не отдают
@@ -40,6 +40,8 @@ docker compose up --build -d
 
 Если команда `docker compose` недоступна, используйте `docker-compose`.
 
+Схема из `backend/sql/` (`001_init.sql` … `004_workspaces.sql`) применяется только при **первом** создании volume Postgres. Новые SQL-файлы на уже существующий том сами не накатываются.
+
 ## Адреса
 
 | Что | Адрес |
@@ -47,7 +49,7 @@ docker compose up --build -d
 | Интерфейс | http://127.0.0.1:3010 |
 | API и Swagger | http://127.0.0.1:8010/docs |
 | Проверка процесса | http://127.0.0.1:8010/api/v1/live |
-| Проверка базы | http://127.0.0.1:8010/api/v1/health |
+| Проверка базы | http://127.0.0.1:8010/api/v1/health и `/api/health` |
 | Postgres приложения | `127.0.0.1:5435` |
 | Шлюз модели | http://127.0.0.1:4000/v1 |
 | Снаружи | https://intime.95-79-92-200.sslip.io:8088 |
@@ -56,14 +58,24 @@ docker compose up --build -d
 
 ## Демо-данные
 
-Интерфейс без входа работает от пользователя `anna` (`COMPAT_USER_LOGIN`).
+Интерфейс без входа работает от пользователя `anna` (`COMPAT_USER_LOGIN`). Пока пользователя нет в базе, список записей не загрузится.
 
 ```bash
 pip install -r scripts/testdatagen/requirements.txt
 python scripts/testdatagen/seed.py
 ```
 
-Пароль демо-пользователей `anna`, `boris`, `clara`: `testpass`. Повторный запуск удаляет их записи и создаёт набор заново. У `anna` три пространства: «Общее пространство», «Работа», «Личное».
+Пароль демо-пользователей `anna`, `boris`, `clara`: `testpass`. Повторный запуск удаляет их записи и создаёт набор заново.
+
+У `anna` четыре пространства: «Общее пространство», «Работа», «Личное», «Тестовые данные». В «Тестовые данные» из CSV `voice_assistant_events_1000_77e927b5d2.csv` загружаются 1000 записей. Только это пространство, без пересева остальных:
+
+```bash
+python scripts/testdatagen/import_voice_events.py
+```
+
+Состав маленького набора: `scripts/testdatagen/testdescription.md`.
+
+Выбранное пространство фильтрует списки, поиск, чат и создание. Браузер помнит id в `localStorage` (`ritm.workspace-id`). После пересева id меняются — если экран пустой, выберите пространство заново.
 
 ## Проверка
 
@@ -73,6 +85,15 @@ llm/scripts/check-api.sh
 ```
 
 `--deep` дополнительно проверяет, что шлюз и распознавание отвечают на соединение, без генерации текста.
+
+Автотесты backend — только изолированная БД `intime_test`, не рабочая `intime`/`aivritm`:
+
+```bash
+pip install -r tests/requirements.txt
+python3 -m pytest -q
+```
+
+Unit-тесты фронта: `npm test` из `frontend/web`.
 
 ## После правок
 

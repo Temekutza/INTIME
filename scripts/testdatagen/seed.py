@@ -19,8 +19,9 @@ from datetime import datetime, timezone
 import psycopg
 from psycopg.types.json import Json
 
-from dataset import DEFAULT_WORKSPACE, PASSWORD, Item, UserFixture, build
+from dataset import DEFAULT_WORKSPACE, PASSWORD, TEST_DATA_WORKSPACE, Item, UserFixture, build
 from db import database_url, describe_url
+from import_voice_events import fill_workspace
 
 INSERT_ITEM = """
     INSERT INTO planner_items (
@@ -123,6 +124,7 @@ def main() -> None:
 
             for fixture in fixtures:
                 _insert_fixture(cur, fixture, password_hash, now)
+            fill_workspace(cur, login="anna", workspace=TEST_DATA_WORKSPACE)
 
             cur.execute(
                 """

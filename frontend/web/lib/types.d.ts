@@ -24,4 +24,4 @@ export interface Workspace {
 }
 export type EventPatch = Partial<Pick<RitmEvent, "title" | "date" | "time" | "status">>;
 export type View = "tasks" | "reminders" | "calendar";
-export type CalendarLayout = "list" | "month";
+export type CalendarLayout = "list" | "day" | "week" | "month" | "year";

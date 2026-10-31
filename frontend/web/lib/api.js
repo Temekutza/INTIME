@@ -1,5 +1,9 @@
 // @ts-check
 import { dayDate, isoDay } from "./model.js";
+export class HttpError extends Error {
+  /** @param {string} message @param {number} status */
+  constructor(message, status) { super(message); this.status = status; }
+}
 /** @typedef {import('./types').RitmEvent} RitmEvent */
 /** @typedef {import('./types').Workspace} Workspace */
 
@@ -39,11 +43,11 @@ export async function requestJson(url, options = {}) {
       if (record(body) && typeof body.detail === "string") detail = body.detail;
     } catch { /* ответ не JSON */ }
     if (response.status === 401 || response.status === 403) throw new Error("Нет доступа к данным.");
-    if (response.status === 404) throw new Error("Запись уже удалена. Обновите список.");
+    if (response.status === 404) throw new HttpError("Запись уже удалена. Обновите список.", 404);
     if (response.status === 409) throw new Error(detail || "Конфликт данных. Обновите список.");
     throw new Error(detail || `Сервер не выполнил запрос (${response.status}). Повторите попытку.`);
   }
-  return response.json();
+  return response.status === 204 ? null : response.json();
 }
 
 /** @param {string} url @param {Record<string, string | number | null | undefined>} params */
@@ -56,6 +60,8 @@ function withQuery(url, params) {
   const query = search.toString();
   return query ? `${url}?${query}` : url;
 }
+/** Default space keeps legacy URLs. @param {string} url @param {number | null | undefined} id */
+export function workspaceUrl(url, id) { return withQuery(url, { workspace_id: id === 1 ? null : id }); }
 
 /** @param {unknown} value @returns {value is Workspace} */
 export function isWorkspace(value) {
@@ -79,17 +85,23 @@ export async function createWorkspace(name) {
   if (!isWorkspace(data)) throw new Error("Неожиданный формат пространства.");
   return data;
 }
+/** @param {number} id @param {string} name */
+export async function renameWorkspace(id, name) {
+  const data = await requestJson(`/api/workspaces/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+  if (!isWorkspace(data)) throw new Error("Неожиданный формат пространства.");
+  return data;
+}
 
 /** @param {AbortSignal} [signal] @param {number | null} [workspaceId] @returns {Promise<RitmEvent[]>} */
 export async function listEvents(signal, workspaceId) {
-  const data = await requestJson(withQuery("/api/events", { workspace_id: workspaceId }), { signal });
+  const data = await requestJson(workspaceUrl("/api/events", workspaceId), { signal });
   if (!record(data) || !Array.isArray(data.events) || !data.events.every(isEvent)) throw new Error("Неожиданный формат списка записей.");
   return data.events;
 }
 
-/** @param {number} id @param {import('./types').EventPatch} patch */
-export async function patchEvent(id, patch) {
-  const data = await requestJson(`/api/events/${id}`, {
+/** @param {number} id @param {import('./types').EventPatch} patch @param {number | null} [workspaceId] */
+export async function patchEvent(id, patch, workspaceId) {
+  const data = await requestJson(workspaceUrl(`/api/events/${id}`, workspaceId), {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch),
   });
   if (!isEvent(data)) throw new Error("Неожиданный формат сохранённой записи.");
@@ -98,7 +110,7 @@ export async function patchEvent(id, patch) {
 
 /** @param {string} query @param {AbortSignal} signal @param {number | null} [workspaceId] @returns {Promise<RitmEvent[]>} */
 export async function searchEvents(query, signal, workspaceId) {
-  const data = await requestJson(withQuery("/api/search", { q: query, limit: 20, workspace_id: workspaceId }), { signal });
+  const data = await requestJson(withQuery("/api/search", { q: query, limit: 20, workspace_id: workspaceId === 1 ? null : workspaceId }), { signal });
   if (!record(data) || !Array.isArray(data.hits)) throw new Error("Неожиданный формат результатов поиска.");
   return data.hits.map((/** @type {unknown} */ hit) => {
     if (!record(hit) || !isEvent(hit.event)) throw new Error("Неожиданный формат найденной записи.");

@@ -3,7 +3,7 @@ import { requestJson, isEvent } from "./api.js";
 import { workspaceStore } from "./workspace.js";
 import { colorStore } from "./colors.js";
 import { ColorPicker } from "./color-picker.js";
-import { button, el } from "./ui.js";
+import { button, el, icon } from "./ui.js";
 import { validatePatch } from "./model.js";
 import { hasProfanity } from "./profanity.js";
 import { enhanceFields } from "./fields.js";
@@ -50,7 +50,7 @@ export class CreateEventDialog {
     let lastPayload = null;
     const heading = el("div", "section-heading");
     const title = el("h2", "", "Новая запись"); title.id = "create-title";
-    const close = button("×", "icon-btn", () => this.close()); close.setAttribute("aria-label", "Закрыть форму создания");
+    const close = button("", "icon-btn", () => this.close()); close.append(icon("close")); close.setAttribute("aria-label", "Закрыть форму создания");
     heading.append(title, close);
     const form = el("form", "create-form");
     const kind = el("select"); kind.id = "create-type";
@@ -111,14 +111,14 @@ export class CreateEventDialog {
         validatePatch({ type }, name.value, date.value, time.value, "planned");
         const payload = { type, title: name.value.trim(), date: date.value || null, time: time.value || null,
           duration_min: type === "meeting" ? Number(duration.value) : null, is_deadline: type === "task" && deadline.checked, color,
-          workspace_id: workspaceStore.currentId };
+          ...(workspaceStore.currentId === null ? {} : { workspace_id: workspaceStore.currentId }) };
         if (type === "meeting" && (!Number.isInteger(payload.duration_min) || Number(payload.duration_min) < 1 || Number(payload.duration_min) > 1440)) throw new Error("Укажите длительность от 1 до 1440 минут.");
         const serialized = JSON.stringify(payload);
         const fingerprint = (confirmed ? "confirm:" : "create:") + serialized;
         if (lastPayload !== fingerprint) { requestId = crypto.randomUUID(); lastPayload = fingerprint; }
         setBusy(true); message.textContent = "Сохранение…"; message.classList.remove("is-danger");
         const result = confirmed
-          ? await requestJson("/api/message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: session, request_id: requestId, text: "Да", new_event_color: color, workspace_id: workspaceStore.currentId }) })
+          ? await requestJson("/api/message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: session, request_id: requestId, text: "Да", new_event_color: color, ...(workspaceStore.currentId === null ? {} : { workspace_id: workspaceStore.currentId }) }) })
           : await requestJson("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: session, request_id: requestId, ...payload }) });
         if (!isReply(result)) throw new Error("Сервер вернул некорректный ответ создания.");
         message.textContent = result.text;

@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const artifacts = process.env.INTIME_TEST_ARTIFACTS || path.join(os.tmpdir(), "intime-frontend-qa");
+const artifacts = process.env.AIVRITM_TEST_ARTIFACTS || path.join(os.tmpdir(), "aivritm-frontend-qa");
 const popup = page => page.locator(".color-popover:popover-open");
 let baseline;
 
@@ -29,7 +29,7 @@ test.afterEach(async ({ request }) => {
 async function loaded(page) {
   await page.goto("/");
   await expect(page.locator("#records")).toHaveAttribute("aria-busy", "false");
-  await expect(page.getByRole("button", { name: "Цвет новой записи", exact: true })).toBeEnabled();
+  await page.waitForFunction(async () => (await import("/static/lib/colors.js")).colorStore.loaded);
 }
 async function screenshot(page, name) {
   await fs.mkdir(artifacts, { recursive: true });
@@ -65,7 +65,7 @@ test("color inheritance, override, default change, reset and reload across all t
   await accent(page.locator('#records [data-id="2"]'), "#4f72d8");
   await page.locator("#message-input").fill("Какие задачи у меня сегодня?"); await page.locator("#message-input").press("Enter");
   await accent(page.locator('#dialogue [data-event-id="1"]').last(), "#f28c28");
-  await page.locator('[data-tab="calendar"]').click();
+  await page.locator('[data-tab="calendar"]').click(); await page.locator('[data-calendar-layout="list"]').click();
   await accent(page.locator('#records [data-id="1"]'), "#f28c28");
   await screenshot(page, "colors-calendar-and-chat");
   await page.reload();
@@ -91,10 +91,11 @@ test("creation inherits without writing an override, and allows a specific creat
   const inherited = events.find(item => /наследование цветов/i.test(item.title));
   expect((await (await request.get("/api/colors")).json()).overrides[String(inherited.id)]).toBeUndefined();
   await accent(page.locator(`#records [data-id="${inherited.id}"]`), "#112233");
-  await choose(page, page.getByRole("button", { name: "Цвет новой записи", exact: true }), "#aabbcc");
-  await page.locator("#message-input").fill("Поставь задачу проверить индивидуальный цвет"); await page.locator("#message-input").press("Enter");
-  await page.getByRole("button", { name: "Подтвердить", exact: true }).click();
-  await expect(page.locator("#dialogue .event-card__title").last()).toContainText("индивидуальный цвет");
+  await page.locator("#add-button").click();
+  await page.locator("#create-name").fill("Проверить индивидуальный цвет");
+  await choose(page, page.getByRole("button", { name: "Цвет создаваемой записи", exact: true }), "#aabbcc");
+  await page.locator("#create-dialog").getByRole("button", { name: "Создать задачу", exact: true }).click();
+  await expect(page.locator("#create-dialog")).toBeHidden();
   events = (await (await request.get("/api/events")).json()).events;
   const custom = events.find(item => /индивидуальный цвет/i.test(item.title));
   await accent(page.locator(`#records [data-id="${custom.id}"]`), "#aabbcc");
@@ -105,7 +106,7 @@ test("creation inherits without writing an override, and allows a specific creat
 
 test("creation color survives a clarification and is stored on the resulting meeting", async ({ page, request }) => {
   await loaded(page);
-  await choose(page, page.getByRole("button", { name: "Цвет новой записи", exact: true }), "#2255aa");
+  await defaultColor(page, "Встречи", "#2255aa");
   await page.locator("#message-input").fill("Добавь встречу с цветной командой завтра");
   await page.locator("#message-input").press("Enter");
   await expect(page.locator(".message-assistant").last()).toContainText("На какое время");
@@ -115,7 +116,7 @@ test("creation color survives a clarification and is stored on the resulting mee
   const events = (await (await request.get("/api/events")).json()).events;
   const created = events.find(item => /цветной командой/i.test(item.title));
   expect(created.type).toBe("meeting");
-  expect((await (await request.get("/api/colors")).json()).overrides[String(created.id)]).toBe("#2255aa");
+  expect((await (await request.get("/api/colors")).json()).overrides[String(created.id)]).toBeUndefined();
   await accent(page.locator(`#dialogue [data-event-id="${created.id}"]`).last(), "#2255aa");
 });
 
@@ -126,6 +127,7 @@ test("meeting and reminder colors are consistent with day panel and calendar", a
   await choose(page, page.getByRole("button", { name: "Цвет записи", exact: true }), "#ff8800");
   await accent(page.locator('#records [data-id="12"]'), "#ff8800");
   await accent(page.locator('#day-meetings [data-id="12"]'), "#ff8800");
+  await page.getByRole("button", { name: "Закрыть редактор", exact: true }).click();
   await defaultColor(page, "Напоминания", "#008877");
   await page.locator('[data-tab="reminders"]').click();
   await accent(page.locator('#records [data-id="9"]'), "#008877");
@@ -205,7 +207,8 @@ for (const [width, height] of [[1280, 800], [1343, 868], [1366, 768], [1440, 900
     await page.getByRole("button", { name: "Открыть: Согласовать макет", exact: true }).click();
     await page.getByRole("button", { name: "Цвет записи", exact: true }).click(); await assertPopup();
     await page.keyboard.press("Escape");
-    await page.getByRole("button", { name: "Цвет новой записи", exact: true }).click();
+    await page.locator("#add-button").click();
+    await page.getByRole("button", { name: "Цвет создаваемой записи", exact: true }).click();
     await assertPopup(); await screenshot(page, `color-creation-${width}x${height}`);
   });
 }

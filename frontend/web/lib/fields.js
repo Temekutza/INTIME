@@ -92,8 +92,8 @@ class DateField {
     const month = button(this.month.toLocaleDateString("ru-RU", { month: "long", year: "numeric" }), "date-picker__month", () => { this.mode = this.mode === "days" ? "months" : "years"; this.render(); this.popup.position(); });
     month.setAttribute("aria-label", "Выбрать месяц и год");
     const move = (/** @type {number} */ delta) => { this.month = new Date(this.month.getFullYear() + (this.mode === "years" ? delta * 12 : this.mode === "months" ? delta : 0), this.month.getMonth() + (this.mode === "days" ? delta : 0), 1); this.render(); this.popup.position(); };
-    const prev = button("‹", "icon-btn", () => move(-1)); prev.setAttribute("aria-label", "Предыдущий период");
-    const next = button("›", "icon-btn", () => move(1)); next.setAttribute("aria-label", "Следующий период");
+    const prev = button("", "icon-btn", () => move(-1)); prev.append(icon("previous")); prev.setAttribute("aria-label", "Предыдущий период");
+    const next = button("", "icon-btn", () => move(1)); next.append(icon("next")); next.setAttribute("aria-label", "Следующий период");
     heading.append(month, prev, next); this.panel.append(heading);
     if (this.mode === "years") {
       const years = el("div", "date-picker__months"); const start = this.month.getFullYear() - 5;
@@ -178,6 +178,7 @@ export function enhanceFields(root = document) {
   for (const [control, widget] of controls) if (!control.isConnected) { widget.destroy(); controls.delete(control); }
   root.querySelectorAll("select, input[type=date], input[type=time]").forEach(control => {
     if (!(control instanceof HTMLInputElement || control instanceof HTMLSelectElement) || !control.id) return;
+    if (control.id === "workspace-select") return;
     const existing = controls.get(control); if (existing) { existing.sync(); return; }
     controls.set(control, control instanceof HTMLSelectElement ? new StyledSelect(control) : control.type === "date" ? new DateField(control) : new TimeField(control));
   });

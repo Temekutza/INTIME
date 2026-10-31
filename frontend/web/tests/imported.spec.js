@@ -1,0 +1,36 @@
+import { test, expect } from "@playwright/test";
+import path from "node:path";
+import os from "node:os";
+
+test("imported frontend works with existing backend", async ({ page, request }) => {
+  const errors = []; page.on("pageerror", error => errors.push(error.message));
+  await page.addInitScript(() => { localStorage.setItem("ritm.speech", "off"); localStorage.setItem("ritm.session_id", crypto.randomUUID()); });
+  await page.goto("/");
+  await expect(page.locator("#records")).toHaveAttribute("aria-busy", "false");
+  await expect(page.locator(".brand")).toContainText("InTime");
+  await expect(page.locator("#workspace-select")).toBeEnabled();
+  await expect(page.locator("#workspace-select")).toContainText("Общее пространство");
+  await expect(page.locator("#creation-colors")).toHaveCount(0);
+  await page.locator("#add-button").click();
+  await page.locator("#create-name").fill("Проверить перенос интерфейса");
+  await page.locator("#create-dialog").getByRole("button", { name: "Создать задачу", exact: true }).click();
+  await expect(page.locator("#create-dialog")).toBeHidden();
+  await expect(page.locator("#edit-title")).toHaveValue("Проверить перенос интерфейса");
+  await page.locator("#edit-title").fill("Проверить перенос интерфейса успешно");
+  await page.getByRole("button", { name: "Сохранить изменения", exact: true }).click();
+  await expect(page.locator(".editor-save-status")).toContainText("сохранены");
+  await page.getByRole("button", { name: "Закрыть редактор", exact: true }).click();
+  await page.locator("#message-input").fill("Поставь задачу проверить подключение чата"); await page.locator("#message-input").press("Enter");
+  await page.getByRole("button", { name: "Подтвердить", exact: true }).click();
+  await expect(page.locator("#dialogue .event-card").last()).toContainText("подключение чата");
+  await page.locator("#day-open").click(); await expect(page.locator("#day-panel")).toBeHidden();
+  await page.locator("#day-open").click(); await expect(page.locator("#day-panel")).toBeVisible();
+  await page.locator("#assistant-open").click(); await page.locator("#assistant-open").click();
+  await page.locator('[data-tab="calendar"]').click();
+  await page.locator('[data-calendar-layout="month"]').click();
+  await expect(page.locator("#records")).not.toBeEmpty();
+  await page.screenshot({ path: path.join(os.tmpdir(), "intime-import-calendar.png") });
+  expect(errors).toEqual([]);
+  const records = (await (await request.get("/api/events")).json()).events;
+  for (const record of records.filter(item => /перенос интерфейса|подключение чата/i.test(item.title))) await request.delete(`/api/events/${record.id}`);
+});

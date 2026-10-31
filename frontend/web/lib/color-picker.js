@@ -1,5 +1,5 @@
 // @ts-check
-import { button, el } from "./ui.js";
+import { button, el, icon } from "./ui.js";
 import { normalizeHex, softTint, swatchInk } from "./colors.js";
 import { AnchoredPopover } from "./popover.js";
 const PALETTE = ["#847cce", "#4f72d8", "#367f91", "#418766", "#89a640", "#c4a02f", "#cc8741", "#c66456", "#b45584", "#8a60a3", "#667384", "#303139"];
@@ -43,7 +43,8 @@ export class ColorPicker {
     this.draft = this.options.getValue();
     const initial = this.draft || this.options.getDefault();
     const heading = el("div", "section-heading");
-    heading.append(el("strong", "", this.options.label), button("×", "icon-btn", () => { this.panel.hidePopover(); this.trigger.focus(); }));
+    const close = button("", "icon-btn", () => { this.panel.hidePopover(); this.trigger.focus(); }); close.append(icon("close"));
+    heading.append(el("strong", "", this.options.label), close);
     heading.lastElementChild?.setAttribute("aria-label", "Закрыть выбор цвета");
     const form = el("div", "color-form");
     const palette = el("div", "color-palette"); palette.setAttribute("role", "group"); palette.setAttribute("aria-label", "Готовые цвета");

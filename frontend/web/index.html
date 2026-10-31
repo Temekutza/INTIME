@@ -2,65 +2,64 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light">
   <title>InTime</title>
-  <link rel="stylesheet" href="/static/styles.css">
-  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/assets/fonts/fonts.css?v=mobile-repair-1">
+  <link rel="stylesheet" href="/static/styles.css?v=mobile-repair-1">
+  <link rel="preload" href="/static/assets/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="icon" href="/static/assets/favicon.svg?v=clock" type="image/svg+xml">
+  <link rel="icon" href="/static/assets/favicon.png?v=clock" type="image/png" sizes="32x32">
+  <link rel="apple-touch-icon" href="/static/assets/apple-touch-icon.png?v=clock">
 </head>
 <body class="is-empty">
   <a id="skip-to-input" class="skip-link" href="#message-input">К полю ввода</a>
   <div id="app">
     <header id="header">
-      <a class="brand" href="/" aria-label="intime — главная"><strong>InTime</strong><span>Управляй своим временем</span></a>
+      <a class="brand" href="/" aria-label="InTime — главная"><img src="/static/assets/intime-logo.png" alt="" width="2172" height="724"><span class="brand-name mobile-only">In time</span><span class="visually-hidden">InTime</span></a>
+      <button id="day-open" type="button" class="icon-btn panel-toggle" aria-label="Скрыть Мой день" title="Скрыть Мой день" aria-controls="day-panel" aria-expanded="true" data-icon="panel-left"></button>
       <div class="workspace-control">
         <label class="workspace"><span class="visually-hidden">Пространство</span><select id="workspace-select" title="Пространство"></select></label>
-        <button id="workspace-add" type="button" class="icon-btn" aria-label="Создать пространство" title="Создать пространство" data-icon="plus"></button>
       </div>
       <div class="global-search">
         <form id="search-form" role="search"><label class="visually-hidden" for="search-input">Поиск событий и задач</label><input id="search-input" type="search" maxlength="300" placeholder="Поиск событий и задач" autocomplete="off"><button class="icon-btn" aria-label="Найти" type="submit" data-icon="search"></button></form>
         <section id="search-results" class="search-results" aria-label="Результаты поиска" hidden><div class="section-heading"><strong>Результаты поиска</strong><button id="search-close" type="button" class="icon-btn" aria-label="Закрыть поиск" data-icon="close"></button></div><p id="search-status" role="status"></p><div id="search-list"></div></section>
       </div>
       <button id="sync-status" class="sync-status" type="button" title="Обновить данные. Хранение на этом сервере; облако не подключено." aria-live="polite">Загрузка данных…</button>
-      <button id="create-button" class="btn btn-primary" type="button"><span data-icon="plus"></span>Создать</button>
-      <button id="color-settings-button" class="btn btn-quiet" type="button" aria-label="Настройки цветов">Цвета</button>
-      <button class="icon-btn" type="button" disabled aria-label="Уведомления недоступны" title="Доставка уведомлений пока не поддерживается" data-icon="bell"></button>
-      <span class="avatar" title="Локальное приложение без входа" aria-label="Локальный пользователь">Я</span>
-      <button id="assistant-open" type="button" class="btn btn-quiet" aria-controls="assistant-panel" hidden>Открыть ассистента</button>
-      <button id="day-open" type="button" class="btn btn-quiet" aria-controls="day-panel" aria-expanded="false" hidden>Мой день</button>
+      <button id="create-button" disabled class="btn btn-primary" type="button"><span data-icon="plus"></span>Создать</button>
+      <button id="color-settings-button" class="icon-btn" type="button" aria-label="Настройки цветов" title="Настройки цветов" data-icon="palette"></button>
+      <button id="assistant-open" type="button" class="icon-btn panel-toggle" aria-label="Скрыть ассистента" title="Скрыть ассистента" aria-controls="assistant-panel" aria-expanded="true" data-icon="panel-right"></button>
+      <button id="mobile-search-open" type="button" class="icon-btn mobile-only" aria-label="Поиск" data-icon="search"></button>
+      <button id="mobile-ai-open" type="button" class="icon-btn mobile-only" aria-label="Открыть InTime AI" title="Открыть InTime AI" aria-controls="assistant-panel" aria-expanded="false" data-icon="sparkles"></button>
+      <button id="mobile-account" type="button" class="avatar-btn mobile-only" aria-haspopup="menu" aria-controls="account-menu" aria-label="Меню пространства"><span id="mobile-initials">•</span></button>
     </header>
     <div id="layout">
       <aside id="day-panel" class="day-panel" aria-labelledby="day-title">
-        <div class="section-heading"><h2 id="day-title">Мой день</h2><button id="day-close" type="button" class="icon-btn" aria-label="Скрыть Мой день" aria-controls="day-panel" aria-expanded="true" data-icon="panel"></button></div>
+        <div class="section-heading"><h2 id="day-title">Мой день</h2><button id="day-sheet-close" type="button" class="icon-btn mobile-only" aria-label="Закрыть Мой день" data-icon="close"></button></div>
         <div class="clock" aria-hidden="true"><div class="clock__dial"><span class="clock__12">12</span><span class="clock__3">3</span><span class="clock__6">6</span><span class="clock__9">9</span><span id="clock-hour" class="clock__hand clock__hand--hour"></span><span id="clock-minute" class="clock__hand clock__hand--minute"></span><span class="clock__pin"></span></div></div>
         <div class="day-time"><time id="day-time">--:--</time><span id="day-zone"></span></div><p id="day-date" class="day-date"></p>
         <section class="day-section"><div class="section-heading"><h3>Сегодняшние встречи</h3><span id="meeting-count" class="muted"></span></div><div id="day-meetings"><p class="muted">Загрузка…</p></div></section>
         <section class="day-section"><div class="section-heading"><h3>Задачи на сегодня</h3><span id="day-task-count" class="muted"></span></div><div id="day-tasks"></div></section>
-        <p class="local-note"><span data-icon="cloud"></span>Данные на вашем сервере<br>Облако не подключено</p>
       </aside>
       <main id="workspace-main" class="workspace-main">
         <nav class="tabs" aria-label="Разделы"><button type="button" data-tab="calendar"><span data-icon="calendar"></span>Календарь</button><button type="button" class="is-active" data-tab="tasks" aria-current="page"><span data-icon="check"></span>Задачи <span id="tasks-count"></span></button><button type="button" data-tab="reminders"><span data-icon="bell"></span>Напоминания <span id="reminders-count"></span></button></nav>
-        <div class="page-heading"><div><h1 id="view-title">Мои задачи</h1><p id="view-description" class="muted">Загрузка записей…</p></div><button id="add-button" class="btn btn-primary" type="button"><span data-icon="plus"></span><span id="add-label">Добавить задачу</span></button></div>
-        <div class="view-toolbar"><div id="task-filters"><label class="visually-hidden" for="status-filter">Статус задач</label><select id="status-filter"><option value="all">Все задачи</option><option value="planned">Открытые</option><option value="done">Завершённые</option></select></div><div id="calendar-controls" hidden><label class="visually-hidden" for="calendar-date">День календаря</label><input id="calendar-date" type="date"><button type="button" class="btn btn-quiet" id="calendar-today">Сегодня</button><div id="calendar-layout" class="view-toggle" role="radiogroup" aria-label="Способ отображения"><button type="button" class="view-toggle__btn is-active" role="radio" aria-checked="true" data-calendar-layout="list" aria-label="Списком" title="Списком"><span data-icon="list"></span></button><button type="button" class="view-toggle__btn" role="radio" aria-checked="false" data-calendar-layout="month" aria-label="Календарём" title="Календарём"><span data-icon="calendar"></span></button></div></div><label class="sort-control"><span data-icon="sort"></span><span class="visually-hidden">Порядок записей</span><select id="sort-order"><option value="asc">Сначала ближайшие</option><option value="desc">Сначала поздние</option></select></label></div>
+        <div class="page-heading"><div class="page-heading__titles"><h1 id="view-title">Мои задачи</h1><span id="view-count" class="view-count mobile-only" hidden></span><p id="view-description" class="muted">Загрузка записей…</p></div><button id="add-button" disabled class="btn btn-primary" type="button"><span data-icon="plus"></span><span id="add-label">Добавить задачу</span></button></div>
+        <div id="type-legend" class="type-legend mobile-only" hidden></div>
+        <div class="view-toolbar"><div id="task-filters"><label class="visually-hidden" for="status-filter">Статус задач</label><select id="status-filter"><option value="all">Все задачи</option><option value="planned">Открытые</option><option value="done">Завершённые</option></select></div><div id="calendar-controls" hidden><div class="calendar-navigation"><button id="calendar-prev" type="button" class="icon-btn" aria-label="Предыдущий период" data-icon="previous"></button><button id="calendar-next" type="button" class="icon-btn" aria-label="Следующий период" data-icon="next"></button><button type="button" class="btn btn-quiet" id="calendar-today">Сегодня</button></div><label class="visually-hidden" for="calendar-date">День календаря</label><input id="calendar-date" type="date"><div id="calendar-layout" class="view-toggle" role="radiogroup" aria-label="Способ отображения"><button type="button" role="radio" data-calendar-layout="day">День</button><button type="button" role="radio" data-calendar-layout="week">Неделя</button><button type="button" role="radio" data-calendar-layout="month">Месяц</button><button type="button" role="radio" data-calendar-layout="year">Год</button><button type="button" role="radio" data-calendar-layout="list">Список</button></div></div><label class="sort-control"><span data-icon="sort"></span><span class="visually-hidden">Порядок записей</span><select id="sort-order"><option value="asc">Сначала ближайшие</option><option value="desc">Сначала поздние</option></select></label></div>
         <div id="data-status" class="data-status" role="status" hidden></div>
-        <div id="content-grid" class="content-grid"><section id="records" class="records" aria-label="Список записей" aria-busy="true"></section><aside id="event-editor" class="event-editor" aria-label="Редактор записи" hidden></aside></div>
+        <div id="content-grid" class="content-grid"><section id="records" class="records" aria-label="Список записей" aria-busy="true"></section><div id="calendar-footer" hidden><div id="calendar-legend" class="calendar-legend"></div><section id="calendar-details" class="calendar-details" aria-label="Выбранное событие"></section></div><aside id="event-editor" class="event-editor" aria-label="Редактор записи" hidden></aside></div>
+        <dialog id="calendar-editor-dialog" class="calendar-editor-dialog" aria-label="Редактирование события"></dialog>
       </main>
       <aside id="assistant-panel" class="assistant-panel" aria-labelledby="assistant-title">
-      <div class="assistant-heading"><h2 id="assistant-title"><span data-icon="sparkles"></span>InTime AI</h2>
+      <button type="button" id="sheet-handle" class="sheet-handle mobile-only" hidden aria-expanded="false" aria-controls="assistant-panel"><span class="sheet-grab" aria-hidden="true"></span><span id="sheet-handle-label" class="visually-hidden">Развернуть InTime AI</span></button>
+      <div class="assistant-heading"><button type="button" id="assistant-back" class="icon-btn mobile-only" aria-label="Закрыть InTime AI" title="Закрыть" data-icon="previous"></button><h2 id="assistant-title"><span data-icon="sparkles"></span>InTime AI</h2><time id="sheet-clock" class="sheet-clock mobile-only">Сегодня</time>
       <div class="header-tools">
-        <button id="assistant-close" type="button" class="icon-btn" aria-label="Скрыть ассистента" aria-controls="assistant-panel" data-icon="panel"></button>
+
+        <button type="button" id="sheet-full" class="icon-btn mobile-only" hidden aria-label="На весь экран" aria-pressed="false" data-icon="panel"></button>
         <button type="button" id="speech-stop" class="icon-btn" hidden aria-label="Остановить озвучивание" title="Остановить озвучивание">
-          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-            <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"></rect>
-          </svg>
         </button>
         <div class="menu-wrap">
-          <button type="button" id="menu-button" class="icon-btn" aria-label="Меню" aria-expanded="false" aria-controls="menu" title="Меню">
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-              <circle cx="5" cy="12" r="1.6" fill="currentColor"></circle>
-              <circle cx="12" cy="12" r="1.6" fill="currentColor"></circle>
-              <circle cx="19" cy="12" r="1.6" fill="currentColor"></circle>
-            </svg>
+          <button type="button" data-icon="more" id="menu-button" class="icon-btn" aria-label="Меню" aria-expanded="false" aria-controls="menu" title="Меню">
           </button>
           <div id="menu" class="menu" hidden>
             <button type="button" id="speech-toggle" class="menu-item" aria-pressed="true">Озвучивание: вкл</button>
@@ -80,34 +79,43 @@
         <p id="pending-hint" class="status-line" hidden>Я помню вопрос. Ответьте текстом.</p>
       </div>
       <div id="suggestions" role="group" aria-label="Варианты ответа" hidden></div>
+      <button type="button" id="sheet-pending" class="sheet-pending mobile-only" hidden>Есть действие, ожидающее подтверждения</button>
       <div class="assistant-bottom">
-      <details class="quick-section" open><summary>Быстрые команды</summary><div class="quick-commands"><button type="button" data-prompt="Поставь задачу "><span data-icon="check"></span>Создать задачу<span aria-hidden="true">↖</span></button><button type="button" data-prompt="Добавь встречу "><span data-icon="calendar"></span>Создать встречу<span aria-hidden="true">↖</span></button><button type="button" data-prompt="Напомни мне "><span data-icon="bell"></span>Добавить напоминание<span aria-hidden="true">↖</span></button><button type="button" data-prompt="Найди "><span data-icon="search"></span>Найти встречу или задачу<span aria-hidden="true">↖</span></button></div></details>
+      <details class="quick-section" open><summary>Быстрые команды</summary><div class="quick-commands"><button type="button" data-prompt="Поставь задачу "><span data-icon="check"></span><span class="quick-command__label">Создать задачу</span></button><button type="button" data-prompt="Добавь встречу "><span data-icon="calendar"></span><span class="quick-command__label">Создать встречу</span></button><button type="button" data-prompt="Напомни мне "><span data-icon="bell"></span><span class="quick-command__label">Добавить напоминание</span></button><button type="button" data-prompt="Найди "><span data-icon="search"></span><span class="quick-command__label">Найти встречу или задачу</span></button></div></details>
       <form id="composer" aria-label="Сообщение для intime" autocomplete="off">
-        <div id="creation-colors"><span class="muted">Цвет новой записи</span></div>
         <div class="composer-box">
           <textarea id="message-input" aria-label="Сообщение" rows="1" maxlength="1000" autocomplete="off" enterkeyhint="send" placeholder="Напишите, что нужно сделать…"></textarea>
-          <button type="button" id="attach-button" class="icon-btn" disabled aria-label="Вложения недоступны" title="Прикрепление файлов пока не поддерживается" data-icon="paperclip"></button>
           <span id="mic-timer" class="mic-timer" hidden>0 с</span>
-          <button type="button" id="mic-button" class="mic icon-btn" aria-pressed="false" aria-keyshortcuts="Alt+M" aria-label="Говорить" aria-describedby="mic-hint" title="Говорить (Alt+M)">
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-              <path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11h-2z"></path>
-            </svg>
+          <button type="button" id="mic-button" data-icon="mic" class="mic icon-btn" aria-pressed="false" aria-keyshortcuts="Alt+M" aria-label="Говорить" aria-describedby="mic-hint" title="Говорить (Alt+M)">
           </button>
           <p id="mic-hint" class="visually-hidden">Сочетание клавиш Alt+M. Esc останавливает запись.</p>
-          <button type="submit" id="send-button" class="icon-btn" aria-label="Отправить" title="Отправить">
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
-              <path fill="currentColor" d="M4 12l1.4 1.4L11 7.8V20h2V7.8l5.6 5.6L20 12l-8-8z"></path>
-            </svg>
+          <button type="submit" id="send-button" data-icon="send" class="icon-btn" aria-label="Отправить" title="Отправить">
           </button>
         </div>
         <p id="composer-status" class="composer-note"></p>
         <p id="voice-unsupported" class="composer-note" hidden>Голос в этом браузере недоступен.</p>
         <p id="mic-denied" class="composer-note is-danger" hidden>Нет доступа к микрофону. Разрешите его в браузере или напишите текстом.</p>
       </form>
-      <p class="assistant-footer">Помощник планирует · Вы решаете</p>
+      <p class="sheet-footnote mobile-only" hidden>Помощник планирует · Вы решаете</p>
       </div>
       </aside>
     </div>
+    <button id="mobile-scrim" class="mobile-scrim" type="button" hidden aria-label="Закрыть меню"></button>
+    <div id="account-menu" class="mobile-menu" hidden role="menu" aria-label="Меню пространства">
+      <button type="button" id="account-day" role="menuitem">Мой день</button>
+      <button type="button" id="account-colors" role="menuitem">Настройки цветов</button>
+    </div>
+    <div id="create-sheet" class="mobile-menu create-sheet" hidden role="menu" aria-label="Создать запись">
+      <button type="button" data-create="task" role="menuitem"><span data-icon="check"></span>Задача</button>
+      <button type="button" data-create="meeting" role="menuitem"><span data-icon="calendar"></span>Встреча</button>
+      <button type="button" data-create="reminder" role="menuitem"><span data-icon="bell"></span>Напоминание</button>
+    </div>
+    <nav id="mobile-tabbar" class="mobile-tabbar mobile-only" aria-label="Разделы">
+      <button type="button" data-mobile-tab="calendar"><span data-icon="calendar"></span><span>Календарь</span></button>
+      <button type="button" data-mobile-tab="tasks"><span class="tab-icon" data-icon="check"></span><span>Задачи</span><span id="mobile-tasks-count" class="tab-badge" hidden></span></button>
+      <button type="button" data-mobile-tab="reminders"><span class="tab-icon" data-icon="bell"></span><span>Напоминания</span><span id="mobile-reminders-count" class="tab-badge" hidden></span></button>
+      <button type="button" id="mobile-create" class="mobile-tabbar__create"><span data-icon="plus"></span><span>Создать</span></button>
+    </nav>
     <div id="confirm-dialog" class="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-text" hidden>
       <div class="dialog-panel">
         <h2 id="confirm-title">Удалить запись?</h2>
@@ -122,7 +130,7 @@
   </div>
   <div id="live-status" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
   <div id="live-reply" class="visually-hidden" aria-live="polite" aria-atomic="true"></div>
-  <script type="module" src="/static/dashboard.js"></script>
-  <script type="module" src="/static/app.js"></script>
+  <script type="module" src="/static/dashboard.js?v=mobile-repair-1"></script>
+  <script type="module" src="/static/app.js?v=mobile-repair-1"></script>
 </body>
 </html>

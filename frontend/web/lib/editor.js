@@ -41,7 +41,7 @@ export class EventEditor {
     const complete = this.host.querySelector(".editor-actions .btn-quiet");
     if (complete) complete.textContent = event.status === "done" ? "Вернуть в открытые" : "Завершить запись";
     const info = this.host.querySelector(".editor-info span:last-child");
-    if (info) info.textContent = `${typeLabel(event.type)} · ${eventMeta(event)}`;
+    if (info) info.textContent = `${typeLabel(event.type)}  ${eventMeta(event)}`;
   }
 
   async close() {
@@ -57,6 +57,7 @@ export class EventEditor {
 
   /** @param {import('./types').RitmEvent} event */
   async open(event) {
+    const keyboard = document.activeElement instanceof HTMLElement && document.activeElement.matches(":focus-visible");
     if (this.busy || this.colorPicker?.busy) return false;
     if (this.id !== null && this.dirty && !await confirmDiscard("Открыть другую запись без сохранения изменений?")) return false;
     this.id = event.id;
@@ -66,7 +67,7 @@ export class EventEditor {
     this.host.replaceChildren();
     paintObject(this.host, event);
     const heading = el("div", "section-heading");
-    heading.append(el("span", "eyebrow", "ВЫБРАННАЯ ЗАПИСЬ"));
+    heading.append(el("span", "eyebrow", event.type === "task" ? "ВЫБРАННАЯ ЗАДАЧА" : "ВЫБРАННАЯ ЗАПИСЬ"));
     const close = button("", "icon-btn", () => this.close());
     close.append(icon("close")); close.setAttribute("aria-label", "Закрыть редактор"); heading.append(close);
     const form = el("form", "editor-form");
@@ -87,23 +88,32 @@ export class EventEditor {
     this.colorPicker = new ColorPicker({ label: "Цвет записи", getValue: () => colorStore.overrides[String(event.id)] || null,
       getDefault: () => colorStore.defaultColor(event.type), ready: () => colorStore.loaded && !colorStore.busy,
       save: color => colorStore.save(event.id, color) });
-    info.append(icon(event.type === "reminder" ? "bell" : "calendar"), el("span", "", `${typeLabel(event.type)} · ${eventMeta(event)}`));
+    info.append(icon(event.type === "reminder" ? "bell" : "calendar"), el("span", "", `${typeLabel(event.type)}  ${eventMeta(event)}`));
     const note = el("p", "capability-note", "Описание и приоритет пока недоступны. Все записи с датой видны в календаре приложения. Внешние календари не подключены. Время записей — локальное время сервера.");
     if (event.type === "reminder") note.textContent = "Это отдельная запись с датой и временем. Привязка к задаче и доставка уведомлений пока недоступны.";
-    const details = el("details", "editor-notes"); details.append(el("summary", "", "О возможностях записи"), note);
+    const details = el("details", "editor-notes"); details.append(el("summary", "", "Дополнительно"), info, note);
     const message = el("p", "editor-save-status", "Изменений нет"); message.setAttribute("role", "status");
     const save = el("button", "btn btn-primary", "Сохранить изменения"); save.type = "submit";
+    save.disabled = true;
     const complete = button(event.status === "done" ? "Вернуть в открытые" : "Завершить запись", "btn btn-quiet", () => {
       status.value = status.value === "done" ? "planned" : "done";
       this.dirty = true;
       form.requestSubmit();
     });
-    const actions = el("div", "editor-actions"); actions.append(save, complete);
-    form.append(titleLabel, title, el("p", "muted", `${typeLabel(event.type)} · №${event.id}`), statusLabel, status, fields, info,
+    const remove = button("Удалить запись", "btn btn-danger", async () => {
+      if (this.busy || !await confirmDiscard(`Удалить «${title.value}»?`, "Удалить", "Отмена", "Удалить запись?")) return;
+      this.busy = true; remove.disabled = true;
+      try { await this.store.remove(event.id); this.dirty = false; this.busy = false; await this.close(); }
+      catch (error) { message.textContent = error instanceof Error ? error.message : "Не удалось удалить запись"; message.classList.add("is-danger"); }
+      finally { this.busy = false; remove.disabled = false; }
+    });
+    const actions = el("div", "editor-actions"); actions.append(save, complete, remove);
+    const identity = el("div", "editor-identity"); identity.append(titleLabel, title, el("p", "muted", `${typeLabel(event.type)}  №${event.id}`));
+    form.append(identity, statusLabel, status, fields,
       el("p", "field-label", "Цветовой акцент"), this.colorPicker.host, details, message, actions);
     const dirty = (/** @type {Event} */ event) => {
       if (event.target instanceof Element && event.target.closest(".color-picker")) return;
-      this.dirty = true; message.textContent = "Есть несохранённые изменения";
+      this.dirty = true; save.disabled = false; message.textContent = "Есть несохранённые изменения";
     };
     form.addEventListener("input", dirty);
     form.addEventListener("change", dirty);
@@ -128,12 +138,13 @@ export class EventEditor {
       } finally {
         this.busy = false;
         for (const field of [title, status, date, time, save, complete, close]) field.disabled = false;
+        save.disabled = !this.dirty;
         enhanceFields(form);
       }
     });
     this.host.append(heading, form);
     enhanceFields(form);
-    title.focus();
+    if (keyboard) title.focus({ preventScroll: true });
     return true;
   }
 }

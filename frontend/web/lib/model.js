@@ -20,12 +20,12 @@ export function dayDate(value) {
 
 /** @param {string | null} date */
 export function formatDate(date) {
-  return date ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" }).format(dayDate(date)) : "Без даты";
+  return date ? new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "long", year: "numeric" }).format(dayDate(date)).replace(/\s*г\.$/u, "") : "Без даты";
 }
 
 /** @param {RitmEvent} event */
 export function eventMeta(event) {
-  return [event.is_deadline ? "До " + formatDate(event.date) : formatDate(event.date), event.time?.slice(0, 5)].filter(Boolean).join(" · ");
+  return [event.is_deadline ? "До " + formatDate(event.date) : formatDate(event.date), event.time?.slice(0, 5)].filter(Boolean).join("  ");
 }
 
 /** @param {RitmEvent} event */
@@ -36,15 +36,16 @@ export function eventStart(event) {
 
 /** @param {RitmEvent} event @param {Date} now */
 export function relativeTime(event, now) {
+  if (event.status === "done") return "Завершено";
   const start = eventStart(event);
   if (!start) return event.date ? "Время не указано" : "Дата не указана";
   const delta = start.getTime() - now.getTime();
-  if (delta < 0) return event.status === "done" ? "Завершено" : "Время прошло";
+  if (delta < 0) return "Время прошло";
   const minutes = Math.ceil(delta / 60000);
   if (minutes === 0) return "Сейчас";
   if (minutes < 60) return `Через ${minutes} мин`;
   if (minutes < 1440) return `Через ${Math.floor(minutes / 60)} ч${minutes % 60 ? " " + minutes % 60 + " мин" : ""}`;
-  return `Через ${Math.floor(minutes / 1440)} дн`;
+  return `Через ${Math.floor(minutes / 1440)} дн${Math.floor(minutes % 1440 / 60) ? " " + Math.floor(minutes % 1440 / 60) + " ч" : ""}`;
 }
 
 /** @param {readonly RitmEvent[]} events @param {string} direction */

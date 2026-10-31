@@ -1,4 +1,34 @@
-# intime: интерфейс и проверка реализации
+# Aivritm: интерфейс и проверка реализации
+
+Рабочие пространства и навигация реализованы: постоянные кнопки-иконки панелей,
+создание/переименование/восстановление пространства, серверное разделение событий,
+поиска и контекста AI. Существующие данные остаются в «Общем пространстве».
+Проверено: 493 pytest / 30 Node / 95 E2E, TypeScript и ESLint.
+Авторизации в прототипе нет — это пространства одного локального профиля.
+Подробности и API — [WORKSPACES_REPORT.md](WORKSPACES_REPORT.md).
+
+Актуальная визуальная коррекция: локальный Inter без засечек, логотип в белой
+шапке и ровные карточки быстрых команд. Компоновка и логика календаря сохранены.
+Проверены 4 целевых E2E, TypeScript и ESLint. Единые Lucide SVG и постоянные
+размеры оболочки сохранены. Подробности — [BRANDING_CLEANUP_REPORT.md](BRANDING_CLEANUP_REPORT.md).
+
+Актуальная правка рабочей области задач: одна общая прокрутка, закреплённый
+редактор, страницы по 40 задач, скруглённое окно и выровненные date/time поля.
+Проверены 9 целевых E2E, TypeScript и ESLint; полный прогон не повторялся.
+Подробности — [TASK_WORKSPACE_REPORT.md](TASK_WORKSPACE_REPORT.md).
+
+31 октября: календарь реконструирован по недельному референсу. Выбор записи
+показывает компактную сводку, явное редактирование открывается отдельно.
+Навигация, сетка, пересечения, цвета и дополнительные режимы проверены;
+полный прогон: 486 pytest / 30 Node / 84 E2E.
+Отчёт и пути скриншотов — [CALENDAR_RECONSTRUCTION_REPORT.md](CALENDAR_RECONSTRUCTION_REPORT.md).
+
+Актуальное исправление MASTER FIX: календарь день/неделя/месяц/год/список,
+удаление из редактора, сохранение завершённых напоминаний, подтверждённые
+перенос и переименование через чат. Проверены 486 pytest, 29 Node unit,
+75 E2E полного прогона и последующие целевые проверки. Полный отчёт,
+матрица F01–F09/U01–U03, скриншоты и ограничения — [MASTER_FIX_REPORT.md](MASTER_FIX_REPORT.md).
+Следующие абзацы описывают предыдущие этапы.
 
 Актуальный этап: единые Select/DatePicker/TimePicker/Popover и модальные окна,
 доработанная панель ассистента и обязательное подтверждение создания через чат.
@@ -148,7 +178,7 @@ E2E запускают настоящий backend с FixedClock и своей Te
 
 ## 7. Скриншоты
 
-Артефакты текущего запуска: `%TEMP%\intime-frontend-qa\`.
+Артефакты текущего запуска: `%TEMP%\aivritm-frontend-qa\`.
 
 - `tasks-editor-{width}x{height}.png` — шесть целевых размеров, редактор и диалог.
 - `reminders-{width}x{height}.png` — шесть целевых размеров, напоминания.
@@ -163,7 +193,7 @@ E2E запускают настоящий backend с FixedClock и своей Te
 
 ## 8. Изменённые файлы
 
-Корень путей: `D:\Aviritm\intime`.
+Корень путей: `D:\Aviritm\Aivritm`.
 
 - `web/index.html`, `web/styles.css`, `web/app.js` — каркас и интеграция диалога.
 - `web/dashboard.js`, `web/lib/{types.d.ts,api.js,store.js,model.js,ui.js,views.js,editor.js}`
@@ -299,15 +329,15 @@ npm --prefix web ci
 npm --prefix web run typecheck
 npm --prefix web run lint
 npm --prefix web test
-$env:INTIME_TEST_PYTHON = (Resolve-Path .venv\Scripts\python.exe).Path
+$env:AIVRITM_TEST_PYTHON = (Resolve-Path .venv\Scripts\python.exe).Path
 npm --prefix web exec -- playwright install chromium
 npm --prefix web run test:e2e
 ```
 
 Для установленного отдельно Chromium можно передать полный путь к `chrome.exe`
-через `INTIME_BROWSER_PATH`. В текущей проверке использован
+через `AIVRITM_BROWSER_PATH`. В текущей проверке использован
 `%LOCALAPPDATA%\ms-playwright\chromium-1248\chrome-win64\chrome.exe`, а Python взят
-из `%TEMP%\intime-frontend-venv\Scripts\python.exe`.
-`INTIME_TEST_PORT` меняет тестовый порт; `INTIME_TEST_ARTIFACTS` — папку отчётов.
+из `%TEMP%\aivritm-frontend-venv\Scripts\python.exe`.
+`AIVRITM_TEST_PORT` меняет тестовый порт; `AIVRITM_TEST_ARTIFACTS` — папку отчётов.
 По умолчанию отчёты, скриншоты, трассы, временные базы и профиль тестового
 браузера остаются вне репозитория.

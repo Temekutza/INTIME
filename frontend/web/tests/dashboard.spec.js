@@ -2,9 +2,8 @@ import { test, expect, chromium } from "@playwright/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { USE_DB_MOCKS } from "./db-mocks.js";
 
-const artifacts = process.env.INTIME_TEST_ARTIFACTS || path.join(os.tmpdir(), "intime-frontend-qa");
+const artifacts = process.env.AIVRITM_TEST_ARTIFACTS || path.join(os.tmpdir(), "aivritm-frontend-qa");
 const sizes = [[1280, 800], [1343, 868], [1366, 768], [1440, 900], [1536, 985], [1920, 1080]];
 let baseline = [];
 
@@ -34,7 +33,7 @@ test.beforeEach(async ({ page }) => {
 async function loaded(page) {
   await page.goto("/");
   await expect(page.locator("#records")).toHaveAttribute("aria-busy", "false");
-  await expect(page.locator("#sync-status")).toHaveText("Данные на сервере · обновить");
+  await expect(page.locator("#sync-status")).toHaveText("Данные на сервере  обновить");
 }
 
 async function screenshot(page, name) {
@@ -65,15 +64,13 @@ async function geometry(page) {
   expect(findings).toEqual([]);
 }
 
-test("dashboard uses real data; workspaces switch and notifications stay unavailable", async ({ page }) => {
+test("dashboard uses real data; unavailable workspace and notifications are explicit", async ({ page }) => {
   const errors = []; page.on("pageerror", error => errors.push(error.message));
   await loaded(page);
   await expect(page.locator("h1")).toHaveText("Мои задачи");
   await expect(page.locator("#day-time")).toHaveText("10:10");
-  await expect(page.locator("#workspace-select")).toBeEnabled();
-  expect(await page.locator("#workspace-select option").count()).toBeGreaterThan(0);
-  await expect(page.getByRole("button", { name: "Создать пространство" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Уведомления недоступны" })).toBeDisabled();
+  await expect(page.locator(".workspace select")).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Уведомления недоступны" })).toHaveCount(0);
   await expect(page.locator("#day-meetings")).toContainText("Планирование с командой");
   await expect(page.locator("#records")).toContainText("Согласовать макет");
   await geometry(page);
@@ -82,7 +79,7 @@ test("dashboard uses real data; workspaces switch and notifications stay unavail
 
 test("tabs, calendar date, completed group and filters", async ({ page }) => {
   await loaded(page);
-  await page.locator('[data-tab="calendar"]').click();
+  await page.locator('[data-tab="calendar"]').click(); await page.locator('[data-calendar-layout="list"]').click();
   await expect(page.locator("#records")).toContainText("Обсуждение проекта");
   await page.locator("#calendar-date").fill("2026-10-31");
   await page.locator("#calendar-date").dispatchEvent("change");
@@ -138,7 +135,7 @@ test("create, edit and complete task update list, sidebar, calendar and dialogue
   await expect(page.locator(".editor-save-status")).toHaveText("Изменения сохранены на сервере");
   await expect(page.locator("#day-tasks .day-task").filter({ hasText: "Проверить спецификацию E2E" }).locator("input")).toBeChecked();
   await expect(page.locator("#dialogue .event-card").last()).toHaveClass(/is-done/);
-  await page.locator('[data-tab="calendar"]').click();
+  await page.locator('[data-tab="calendar"]').click(); await page.locator('[data-calendar-layout="list"]').click();
   await expect(page.locator("#records")).toContainText("Проверить спецификацию E2E");
 });
 
@@ -151,7 +148,7 @@ test("AI panel collapses, frees space and preserves draft and history", async ({
   await page.locator("#message-input").fill("Черновик\nс новой строкой");
   const history = await page.locator("#dialogue").innerText();
   const before = await page.locator("#workspace-main").boundingBox();
-  await page.locator("#assistant-close").click();
+  await page.locator("#assistant-open").click();
   await expect(page.locator("#assistant-panel")).toBeHidden();
   const after = await page.locator("#workspace-main").boundingBox();
   expect(after.width).toBeGreaterThan(before.width + 200);
@@ -188,7 +185,6 @@ test("create a reminder through the existing dialogue", async ({ page }) => {
 });
 
 test("a late history response cannot restore a previous conversation", async ({ page }) => {
-  test.skip(!USE_DB_MOCKS, "Мок истории из БД выключен");
   let release;
   const gate = new Promise(resolve => { release = resolve; });
   let started;
@@ -214,7 +210,7 @@ test("a refresh preserves unsaved editor fields; canceling discard keeps the cur
   await page.getByRole("button", { name: "Открыть: Проверить документы", exact: true }).click();
   await page.locator("#edit-title").fill("Несохранённый черновик");
   await page.locator("#sync-status").click();
-  await expect(page.locator("#sync-status")).toHaveText("Данные на сервере · обновить");
+  await expect(page.locator("#sync-status")).toHaveText("Данные на сервере  обновить");
   await expect(page.locator("#edit-title")).toHaveValue("Несохранённый черновик");
   await page.locator('[data-tab="calendar"]').click();
   await page.getByRole("button", { name: "Продолжить редактирование", exact: true }).click();
@@ -274,7 +270,6 @@ test("initial error, empty records and permission error states", async ({ page }
   await page.goto("/");
   await expect(page.locator("#data-status")).toContainText("Нет доступа");
   await page.unroute("**/api/events");
-  if (!USE_DB_MOCKS) return;
   await page.route("**/api/events", route => route.fulfill({ json: { events: [] } }));
   await page.locator("#sync-status").click();
   await expect(page.locator("#records")).toContainText("Добавьте первую задачу");
@@ -337,7 +332,7 @@ for (const [width, height] of sizes) {
     await page.getByRole("button", { name: "Открыть: Согласовать макет", exact: true }).click();
     await geometry(page);
     await screenshot(page, `tasks-editor-${width}x${height}`);
-    await page.locator("#assistant-close").click();
+    await page.locator("#assistant-open").click();
     await geometry(page);
     await page.locator("#assistant-open").click();
     await page.locator('[data-tab="reminders"]').click();
@@ -348,7 +343,6 @@ for (const [width, height] of sizes) {
 }
 
 test("long content, many records and history scroll independently; panel widths", async ({ page }) => {
-  test.skip(!USE_DB_MOCKS, "Мок набора записей из БД выключен");
   const base = (await (await page.request.get("/api/events")).json()).events.find(e => e.type === "task" && e.status === "planned");
   const longTitle = "ОченьДлинноеНазваниеБезПробелов".repeat(10);
   const events = Array.from({ length: 200 }, (_, i) => ({ ...base, id: 2000 + i, title: i === 0 ? longTitle : `Тестовая задача ${i}` }));
@@ -358,7 +352,8 @@ test("long content, many records and history scroll independently; panel widths"
   await page.locator("#records .task-row__content").first().click();
   await geometry(page);
   await expect(page.locator("#edit-title")).toHaveValue(longTitle);
-  expect(await page.locator("#records").evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
+  expect(await page.locator("#content-grid").evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
+  expect(await page.locator("#records").evaluate(node => getComputedStyle(node).overflowY)).toBe("visible");
   expect(await page.locator("#dialogue-scroll").evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
   await screenshot(page, "long-content");
   await page.setViewportSize({ width: 1920, height: 1080 });
@@ -371,16 +366,16 @@ test("long content, many records and history scroll independently; panel widths"
 });
 
 test("actual browser tab zoom 125 percent keeps desktop composition", async ({ baseURL }) => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "intime-zoom-"));
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "aivritm-zoom-"));
   const extension = path.join(directory, "extension");
   await fs.mkdir(extension);
   await fs.writeFile(path.join(extension, "manifest.json"), JSON.stringify({
-    manifest_version: 3, name: "intime isolated zoom test", version: "1.0", permissions: ["tabs"],
+    manifest_version: 3, name: "Aivritm isolated zoom test", version: "1.0", permissions: ["tabs"],
     background: { service_worker: "worker.js" },
   }));
   await fs.writeFile(path.join(extension, "worker.js"), "chrome.tabs.onUpdated.addListener((id, info, tab) => { if (tab.url?.startsWith('http://127.0.0.1:')) chrome.tabs.setZoom(id, 1.25); });");
   const context = await chromium.launchPersistentContext(path.join(directory, "profile"), {
-    headless: true, channel: "chromium", executablePath: process.env.INTIME_BROWSER_PATH,
+    headless: true, channel: "chromium", executablePath: process.env.AIVRITM_BROWSER_PATH,
     viewport: null, timezoneId: "Europe/Moscow", locale: "ru-RU",
     args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, "--window-size=1920,1080"],
   });
@@ -389,7 +384,7 @@ test("actual browser tab zoom 125 percent keeps desktop composition", async ({ b
     await page.clock.install({ time: new Date("2026-10-30T10:10:00+03:00") });
     await page.addInitScript(() => localStorage.setItem("ritm.speech", "off"));
     await page.goto(baseURL);
-    await expect(page.locator("#sync-status")).toHaveText("Данные на сервере · обновить");
+    await expect(page.locator("#sync-status")).toHaveText("Данные на сервере  обновить");
     const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker");
     const factor = await worker.evaluate(async () => {
       const tabs = await chrome.tabs.query({});

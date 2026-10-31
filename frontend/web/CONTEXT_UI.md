@@ -84,7 +84,7 @@ PATCH/DELETE записей и методы цветов. В `MessageIn` доб�
 | Типографика | Основной текст 14 px, подписи 12–13 px, заголовки 24 px; согласованный line-height |
 | Календарь | Собственный округлый popup, выбор дня, месяца/года, сегодня, очистка |
 | Dropdown/popover | Одна поверхность, граница, фокус, selected-state и геометрия |
-| InTime AI | Различимые роли, спокойные сообщения, независимая прокрутка истории, закреплённый ввод |
+| Ритм AI | Различимые роли, спокойные сообщения, независимая прокрутка истории, закреплённый ввод |
 | Быстрые команды | Единые строки и сворачиваемый блок, освобождающий историю |
 | Подтверждения | Название, тип, дата/время, длительность, состояние, две явные кнопки |
 | Создание в чате | Проверка до записи, блокировка повторных отправок, обработка ошибок и восстановления |
@@ -104,14 +104,14 @@ PATCH/DELETE записей и методы цветов. В `MessageIn` доб�
 npm --prefix web run typecheck
 npm --prefix web run lint
 npm --prefix web test
-$env:INTIME_TEST_PYTHON = (Resolve-Path .venv\Scripts\python.exe).Path
-$env:INTIME_TEST_PORT = '8766'
+$env:AIVRITM_TEST_PYTHON = (Resolve-Path .venv\Scripts\python.exe).Path
+$env:AIVRITM_TEST_PORT = '8766'
 npm --prefix web run test:e2e
 ```
 
-В этой среде Python взят из `%TEMP%\intime-frontend-venv`, Chromium — из
+В этой среде Python взят из `%TEMP%\aivritm-frontend-venv`, Chromium — из
 `%LOCALAPPDATA%\ms-playwright\chromium-1248\chrome-win64\chrome.exe`.
-Путь к Chromium передаётся через `INTIME_BROWSER_PATH`.
+Путь к Chromium передаётся через `AIVRITM_BROWSER_PATH`.
 Build не запускался: у статического frontend нет сборочного шага.
 
 ## 8. Проверки и артефакты
@@ -134,7 +134,7 @@ TypeScript strict/checkJs, ESLint и `git diff --check` проходят.
 1920×1080. Регрессионная серия дополнительно включает 1343×868, 1536×985,
 масштаб вкладки 125%, длинную историю и тысячу архивных записей.
 
-Артефакты — `%TEMP%\intime-controls-qa`: `e2e-results.json` последнего
+Артефакты — `%TEMP%\aivritm-controls-qa`: `e2e-results.json` последнего
 прогона шести затронутых сценариев, снимки
 `custom-select-*`, `custom-calendar-*`, `custom-time-*`,
 `chat-awaiting-confirmation.png`, `chat-confirmed-and-declined.png`, снимки

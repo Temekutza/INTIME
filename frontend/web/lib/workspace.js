@@ -1,5 +1,5 @@
 // @ts-check
-import { createWorkspace, listWorkspaces } from "./api.js";
+import { createWorkspace, renameWorkspace, listWorkspaces, HttpError } from "./api.js";
 
 const STORAGE_KEY = "ritm.workspace-id";
 
@@ -44,7 +44,7 @@ export class WorkspaceStore extends EventTarget {
       this.currentId = this.pick(this.workspaces);
       if (this.currentId != null) writeSaved(this.currentId);
     } catch (error) {
-      this.error = error instanceof Error ? error.message : "Не удалось загрузить пространства.";
+      this.error = error instanceof HttpError && error.status === 404 ? "На этом сервере доступно одно общее пространство" : error instanceof Error ? error.message : "Не удалось загрузить пространства.";
       this.workspaces = [];
       this.currentId = null;
     } finally {
@@ -67,6 +67,11 @@ export class WorkspaceStore extends EventTarget {
     this.workspaces = [...this.workspaces.filter(row => row.id !== created.id), created];
     this.select(created.id);
     return created;
+  }
+  /** @param {number} id @param {string} name */
+  async rename(id, name) {
+    const row = await renameWorkspace(id, name);
+    this.workspaces = this.workspaces.map(item => item.id === id ? row : item); this.changed(); return row;
   }
 }
 

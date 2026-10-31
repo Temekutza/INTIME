@@ -13,6 +13,7 @@ from app.models.assistant import AssistantMessage, AssistantProposal
 from app.models.user import User
 from app.repositories import assistant_repository, catalog_repository, color_repository, item_repository
 from app.repositories.item_repository import ItemFilters
+from app.schemas.assistant import AssistantCommand
 from app.schemas.item import ItemCreate, ItemQuery
 from app.schemas.ritm import (
     ColorDefaultResponse,
@@ -30,9 +31,9 @@ from app.schemas.ritm import (
     SearchResponse,
     TranscriptionOut,
 )
-from app.services import assistant_service, item_service
+from app.services import assistant_service, item_service, workspace_service
 from app.services.delete_match import choice_index, resolve_delete
-from app.services.list_phrase import is_command, match_list_phrase
+from app.services.list_phrase import is_command, is_create_phrase, match_list_phrase
 from app.services.text_guard import REFUSAL, ensure_plain, for_model, is_rejected, mask_profanity
 from app.services.item_service import validate_schedule
 from app.services.ritm_map import (
@@ -62,8 +63,24 @@ _PROPOSAL_KEYS = (
 _MAX_AUDIO = 10 * 1024 * 1024
 
 
-def _session_key(value: str | None) -> str:
-    return (value or "default").strip() or "default"
+def _scoped_query(query: ItemQuery, workspace_id: int | None) -> ItemQuery:
+    if workspace_id is None:
+        return query
+    return query.model_copy(update={"workspace_id": workspace_id})
+
+
+async def _bind_workspace(session: AsyncSession, user: User, item: ItemCreate) -> ItemCreate:
+    workspace_id = await workspace_service.resolve_id(session, user, item.workspace_id)
+    if item.workspace_id == workspace_id:
+        return item
+    return item.model_copy(update={"workspace_id": workspace_id})
+
+
+def _session_key(value: str | None, workspace_id: int | None = None) -> str:
+    base = (value or "default").strip() or "default"
+    if workspace_id is None:
+        return base
+    return f"ws:{workspace_id}:{base}"
 
 
 def _request_key(value: str | None) -> str:
@@ -86,6 +103,35 @@ def _verdict(text: str) -> str | None:
     if key in _NO:
         return "no"
     return None
+
+
+def _asks_to_confirm(reply: str) -> bool:
+    text = reply.casefold()
+    return any(token in text for token in ("?", "хотите", "всё-таки", "все-таки", "подтверд"))
+
+
+def _mentions_title(title: object, *texts: str) -> bool:
+    if not isinstance(title, str):
+        return False
+    key = " ".join(title.split()).casefold()
+    if len(key) < 2:
+        return False
+    return any(key in " ".join(text.split()).casefold() for text in texts if text)
+
+
+def _matching_rejected_create(
+    proposals: list[AssistantProposal], *texts: str
+) -> AssistantProposal | None:
+    matches = [
+        row
+        for row in proposals
+        if row.action == "create"
+        and row.status == "rejected"
+        and _mentions_title(row.payload.get("title"), *texts)
+    ]
+    if not matches:
+        return None
+    return max(matches, key=lambda row: (row.resolved_at or row.created_at, row.id))
 
 
 def _chosen_color(data: MessageRequest, payload: dict | None = None) -> str | None:
@@ -151,11 +197,30 @@ def _pcm_to_wav(payload: bytes, sample_rate: int = 16000) -> bytes:
     return header + payload
 
 
-async def _ritm(session: AsyncSession, user: User, item_id: int) -> RitmEvent:
-    found = await item_repository.get_item(session, user.id, item_id)
+async def _owned_item(
+    session: AsyncSession,
+    user: User,
+    event_id: int,
+    workspace_id: int | None = None,
+) -> tuple:
+    if workspace_id is not None:
+        await workspace_service.get_owned(session, user, workspace_id)
+    found = await item_repository.get_item(session, user.id, event_id)
     if found is None:
         raise NotFound("Запись не найдена")
     item, status = found
+    if workspace_id is not None and item.workspace_id != workspace_id:
+        raise NotFound("Запись не найдена")
+    return item, status
+
+
+async def _ritm(
+    session: AsyncSession,
+    user: User,
+    item_id: int,
+    workspace_id: int | None = None,
+) -> RitmEvent:
+    item, status = await _owned_item(session, user, item_id, workspace_id)
     return event_from_item(item, status, user.timezone)
 
 
@@ -189,6 +254,7 @@ async def _conflicts(session: AsyncSession, user: User, data: ItemCreate) -> lis
         end_date=None,
         limit=200,
         offset=0,
+        workspace_id=data.workspace_id,
     )
     rows, _ = await item_repository.list_items(session, user.id, filters)
     found: list[RitmEvent] = []
@@ -201,11 +267,28 @@ async def _conflicts(session: AsyncSession, user: User, data: ItemCreate) -> lis
     return found
 
 
+def _schedule_complete(payload: dict) -> bool:
+    kind = payload.get("event_type")
+    if kind in {"meeting", "reminder"}:
+        return bool(payload.get("date") and payload.get("time"))
+    return True
+
+
+def _incomplete_text(item_type: str) -> str:
+    if item_type == "reminder":
+        return "Для напоминания нужны дата и время."
+    if item_type == "meeting":
+        return "Для встречи нужны дата и время."
+    return "Не хватает данных для создания. Уточните название, дату или время."
+
+
 def _payload_from_create(data: ItemCreate, color: str | None, timezone: str, extra: dict | None = None) -> dict:
     card = card_from_create(data, color, timezone)
     if extra:
         card.update(extra)
-    card["complete"] = True
+    if data.workspace_id is not None:
+        card["workspace_id"] = data.workspace_id
+    card["complete"] = _schedule_complete(card)
     card["fingerprint"] = _fingerprint(card)
     return card
 
@@ -215,6 +298,7 @@ def _payload_from_request(data: EventCreateRequest, item: ItemCreate, timezone: 
 
 
 def _item_from_payload(payload: dict, timezone: str) -> ItemCreate:
+    workspace_id = payload.get("workspace_id")
     return item_create_from_ritm(
         item_type=payload["event_type"],
         title=payload["title"],
@@ -223,12 +307,20 @@ def _item_from_payload(payload: dict, timezone: str) -> ItemCreate:
         duration_min=payload.get("duration_min"),
         is_deadline=bool(payload.get("is_deadline")),
         timezone=timezone,
+        workspace_id=workspace_id if isinstance(workspace_id, int) else None,
     )
 
 
-async def _conversation(session: AsyncSession, user: User, session_id: str | None):
+async def _conversation(
+    session: AsyncSession,
+    user: User,
+    session_id: str | None,
+    workspace_id: int | None = None,
+):
+    if workspace_id is not None:
+        await workspace_service.get_owned(session, user, workspace_id)
     return await assistant_repository.get_or_create_conversation(
-        session, user.id, _session_key(session_id)
+        session, user.id, _session_key(session_id, workspace_id)
     )
 
 
@@ -359,7 +451,10 @@ async def list_events(
     *,
     item_type: EventType | None = None,
     status: str | None = None,
+    workspace_id: int | None = None,
 ) -> EventListResponse:
+    if workspace_id is not None:
+        await workspace_service.get_owned(session, user, workspace_id)
     filters = ItemFilters(
         item_type=item_type,
         status="done" if status == "done" else None,
@@ -370,6 +465,7 @@ async def list_events(
         end_date=None,
         limit=LIST_LIMIT,
         offset=0,
+        workspace_id=workspace_id,
     )
     rows, _ = await item_repository.list_items(session, user.id, filters)
     events = [event_from_item(item, code, user.timezone) for item, code in rows]
@@ -378,16 +474,27 @@ async def list_events(
     return EventListResponse(events=events)
 
 
-async def get_event(session: AsyncSession, user: User, event_id: int) -> RitmEvent:
-    return await _ritm(session, user, event_id)
+async def get_event(
+    session: AsyncSession,
+    user: User,
+    event_id: int,
+    workspace_id: int | None = None,
+) -> RitmEvent:
+    return await _ritm(session, user, event_id, workspace_id)
 
 
 async def search_events(
-    session: AsyncSession, user: User, query: str, limit: int
+    session: AsyncSession,
+    user: User,
+    query: str,
+    limit: int,
+    workspace_id: int | None = None,
 ) -> SearchResponse:
     text = query.strip()
     if not text:
         return SearchResponse(hits=[])
+    if workspace_id is not None:
+        await workspace_service.get_owned(session, user, workspace_id)
     filters = ItemFilters(
         item_type=None,
         status=None,
@@ -398,6 +505,7 @@ async def search_events(
         end_date=None,
         limit=limit,
         offset=0,
+        workspace_id=workspace_id,
     )
     rows, _ = await item_repository.list_items(session, user.id, filters)
     return SearchResponse(
@@ -417,9 +525,11 @@ async def create_event(
         duration_min=data.duration_min,
         is_deadline=data.is_deadline,
         timezone=user.timezone,
+        workspace_id=data.workspace_id,
     )
+    item = await _bind_workspace(session, user, item)
     payload = _payload_from_request(data, item, user.timezone)
-    conversation = await _conversation(session, user, data.session_id)
+    conversation = await _conversation(session, user, data.session_id, data.workspace_id)
     request_id = _request_key(data.request_id)
     if data.request_id:
         existing = await assistant_repository.get_proposal(
@@ -474,12 +584,13 @@ async def create_event(
 
 
 async def patch_event(
-    session: AsyncSession, user: User, event_id: int, data: EventPatchRequest
+    session: AsyncSession,
+    user: User,
+    event_id: int,
+    data: EventPatchRequest,
+    workspace_id: int | None = None,
 ) -> RitmEvent:
-    found = await item_repository.get_item(session, user.id, event_id)
-    if found is None:
-        raise NotFound("Запись не найдена")
-    item, current_status = found
+    item, current_status = await _owned_item(session, user, event_id, workspace_id)
     fields = data.model_dump(exclude_unset=True)
     ensure_plain(fields.get("title"))
     if "title" in fields:
@@ -523,7 +634,13 @@ async def patch_event(
     return event_from_item(item, status.code, user.timezone)
 
 
-async def delete_event(session: AsyncSession, user: User, event_id: int) -> None:
+async def delete_event(
+    session: AsyncSession,
+    user: User,
+    event_id: int,
+    workspace_id: int | None = None,
+) -> None:
+    await _owned_item(session, user, event_id, workspace_id)
     await item_service.delete_item(session, user, event_id)
 
 
@@ -553,12 +670,14 @@ async def set_default_color(
 
 
 async def set_event_color(
-    session: AsyncSession, user: User, event_id: int, color: str | None
+    session: AsyncSession,
+    user: User,
+    event_id: int,
+    color: str | None,
+    workspace_id: int | None = None,
 ) -> ColorOverrideResponse:
-    found = await item_repository.get_item(session, user.id, event_id)
-    if found is None:
-        raise NotFound("Запись не найдена")
-    found[0].color = color
+    item, _status = await _owned_item(session, user, event_id, workspace_id)
+    item.color = color
     await persist(session)
     return ColorOverrideResponse(event_id=event_id, color=color)
 
@@ -566,8 +685,16 @@ async def set_event_color(
 def _context(messages: list[AssistantMessage], pending: AssistantProposal | None) -> str | None:
     parts: list[str] = []
     if messages:
-        lines = [f"{row.role}: {for_model(row.text)}" for row in messages[-8:]]
+        recent = messages[-8:]
+        lines = [f"{row.role}: {for_model(row.text)}" for row in recent]
         parts.append("Недавний диалог:\n" + "\n".join(lines))
+        last = recent[-1]
+        if last.role == "assistant" and last.kind == "cancelled":
+            parts.append(
+                "Последнее предложение отклонено, запись не создана. "
+                "Если пользователь снова просит создать — action=create и заполни item. "
+                "Не спрашивай подтверждение текстом."
+            )
     if pending is not None:
         parts.append(
             "Незавершённое предложение, ещё не создано: "
@@ -584,6 +711,10 @@ async def _confirm_pending(
     pending: AssistantProposal,
     data: MessageRequest,
 ) -> ReplyResponse:
+    if pending.action == "update":
+        return await _apply_pending_update(
+            session, user, conversation_id, request_id, pending, data
+        )
     payload = dict(pending.payload)
     payload["color"] = _chosen_color(data, payload)
     if not payload.get("complete"):
@@ -660,10 +791,136 @@ async def _reject_pending(
     return _reply(kind="cancelled", text=text, request_id=request_id, proposal=pending.payload)
 
 
+def _update_preview_card(event: RitmEvent, update: dict | None, color: str | None) -> dict:
+    raw = dict(update or {})
+    title = raw.get("title")
+    if not isinstance(title, str) or not title.strip():
+        title = event.title
+    else:
+        title = title.strip()
+    card = proposal_card(
+        item_type=event.type,
+        title=title,
+        day=event.date,
+        clock=event.time,
+        duration_min=event.duration_min,
+        color=color,
+        is_deadline=event.is_deadline,
+        intent="update",
+    )
+    card["item_id"] = event.id
+    card["workspace_id"] = event.workspace_id
+    card["update"] = raw
+    card["complete"] = True
+    card["fingerprint"] = _fingerprint(card)
+    return card
+
+
+async def _apply_pending_update(
+    session: AsyncSession,
+    user: User,
+    conversation_id: int,
+    request_id: str,
+    pending: AssistantProposal,
+    data: MessageRequest,
+) -> ReplyResponse:
+    payload = dict(pending.payload)
+    item_id = payload.get("item_id")
+    if not isinstance(item_id, int):
+        raise Unprocessable("Модель не указала запись")
+    workspace_id = payload.get("workspace_id")
+    space_id = workspace_id if isinstance(workspace_id, int) else data.workspace_id
+    await _owned_item(session, user, item_id, space_id)
+    await item_service.update_item(
+        session, user, item_id, assistant_service._update_payload(payload.get("update"))
+    )
+    pending.status = "confirmed"
+    pending.payload = payload
+    pending.result_item_id = item_id
+    pending.resolved_at = datetime.now(timezone.utc)
+    event = await _ritm(session, user, item_id)
+    text = "Запись обновлена"
+    await _store_turn(
+        session,
+        conversation_id,
+        request_id=request_id,
+        user_text=data.text,
+        kind="updated",
+        assistant_text=text,
+    )
+    return _reply(
+        kind="updated",
+        text=text,
+        request_id=request_id,
+        events=[event],
+        proposal=payload,
+    )
+
+
+async def _handle_update(
+    session: AsyncSession,
+    user: User,
+    conversation_id: int,
+    request_id: str,
+    data: MessageRequest,
+    command,
+) -> ReplyResponse:
+    if command.item_id is None:
+        raise Unprocessable("Модель не указала запись")
+    try:
+        event = await _ritm(session, user, command.item_id, data.workspace_id)
+    except NotFound:
+        text = "Не нашла эту запись в текущем пространстве."
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="info",
+            assistant_text=text,
+        )
+        return _reply(kind="info", text=text, request_id=request_id)
+    payload = _update_preview_card(event, command.item, _chosen_color(data))
+    if data.require_confirmation:
+        await _put_pending(session, conversation_id, request_id, payload, action="update")
+        text = command.reply.strip() or "Проверьте изменения и подтвердите."
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="confirm",
+            assistant_text=text,
+        )
+        return _reply(
+            kind="confirm",
+            text=text,
+            request_id=request_id,
+            proposal=payload,
+            suggestions=["Да", "Нет"],
+            expecting="confirmation",
+        )
+    await assistant_repository.reject_open(session, conversation_id)
+    await item_service.update_item(
+        session, user, command.item_id, assistant_service._update_payload(command.item)
+    )
+    event = await _ritm(session, user, command.item_id, data.workspace_id)
+    text = command.reply.strip() or "Запись обновлена"
+    await _store_turn(
+        session,
+        conversation_id,
+        request_id=request_id,
+        user_text=data.text,
+        kind="updated",
+        assistant_text=text,
+    )
+    return _reply(kind="updated", text=text, request_id=request_id, events=[event], proposal=payload)
+
+
 async def handle_message(
     session: AsyncSession, user: User, data: MessageRequest
 ) -> ReplyResponse:
-    conversation = await _conversation(session, user, data.session_id)
+    conversation = await _conversation(session, user, data.session_id, data.workspace_id)
     request_id = _request_key(data.request_id)
     if data.request_id:
         user_row = await assistant_repository.user_message_for_request(
@@ -702,18 +959,21 @@ async def handle_message(
         return await _reject_pending(session, user, conversation.id, request_id, pending, data)
 
     phrase = match_list_phrase(spoken, assistant_service.local_now(user))
+    space_id = data.workspace_id
     if phrase is not None:
-        return await _answer_list(session, user, conversation.id, request_id, data, phrase)
+        return await _answer_list(session, user, conversation.id, request_id, data, phrase, space_id)
     history = await assistant_repository.list_messages(session, conversation.id, 20)
     dialog = _context(history, pending)
-    agenda = await assistant_service.agenda_text(session, user)
+    agenda = await assistant_service.agenda_text(session, user, workspace_id=space_id)
     context = "\n".join(part for part in (agenda, dialog) if part)
     command = await assistant_service.interpret(user, spoken, context)
-    if command.action == "create":
+    if command.action == "create" or (
+        command.action == "none" and assistant_service.has_create_fields(command)
+    ):
         return await _handle_create(session, user, conversation.id, request_id, data, command, pending)
     if command.action == "list":
         await assistant_repository.reject_open(session, conversation.id)
-        query = assistant_service._query(command.filters)
+        query = _scoped_query(assistant_service._query(command.filters), space_id)
         found = await item_service.list_items(session, user, query)
         events = [await _ritm(session, user, row.id) for row in found.items]
         text = assistant_service.reply_for_filters(found, query, user)
@@ -729,23 +989,9 @@ async def handle_message(
     if command.action == "delete":
         return await _handle_delete(session, user, conversation.id, request_id, data, spoken)
     if command.action == "update":
-        await assistant_repository.reject_open(session, conversation.id)
-        if command.item_id is None:
-            raise Unprocessable("Модель не указала запись")
-        await item_service.update_item(
-            session, user, command.item_id, assistant_service._update_payload(command.item)
+        return await _handle_update(
+            session, user, conversation.id, request_id, data, command
         )
-        event = await _ritm(session, user, command.item_id)
-        text = command.reply.strip() or "Запись обновлена"
-        await _store_turn(
-            session,
-            conversation.id,
-            request_id=request_id,
-            user_text=data.text,
-            kind="updated",
-            assistant_text=text,
-        )
-        return _reply(kind="updated", text=text, request_id=request_id, events=[event])
     return await _handle_none(session, user, conversation.id, request_id, data, command, pending)
 
 
@@ -756,9 +1002,12 @@ async def _answer_list(
     request_id: str,
     data: MessageRequest,
     phrase,
+    workspace_id: int | None,
 ) -> ReplyResponse:
     await assistant_repository.reject_open(session, conversation_id)
-    found = await item_service.list_items(session, user, assistant_service._query_from_phrase(phrase))
+    found = await item_service.list_items(
+        session, user, _scoped_query(assistant_service._query_from_phrase(phrase), workspace_id)
+    )
     events = [await _ritm(session, user, row.id) for row in found.items]
     text = assistant_service.list_reply(found, phrase, ZoneInfo(user.timezone))
     await _store_turn(
@@ -905,7 +1154,9 @@ async def _handle_delete(
     data: MessageRequest,
     spoken: str,
 ) -> ReplyResponse:
-    found = await item_service.list_items(session, user, ItemQuery(limit=200, offset=0))
+    found = await item_service.list_items(
+        session, user, _scoped_query(ItemQuery(limit=200, offset=0), data.workspace_id)
+    )
     decision = resolve_delete(found.items, spoken, assistant_service.local_now(user))
     await assistant_repository.reject_open(session, conversation_id)
     if decision.item_id is not None:
@@ -1035,12 +1286,38 @@ async def _handle_create(
     except Unprocessable:
         return await _handle_none(session, user, conversation_id, request_id, data, command, pending)
     color = _chosen_color(data, pending.payload if pending is not None else None)
+    creates = [
+        await _bind_workspace(
+            session,
+            user,
+            row.model_copy(
+                update={
+                    "workspace_id": data.workspace_id
+                    if data.workspace_id is not None
+                    else row.workspace_id
+                }
+            ),
+        )
+        for row in creates
+    ]
     if len(creates) > 1:
         return await _offer_batch(
             session, user, conversation_id, request_id, data, creates, color, truncated
         )
     item = creates[0]
     payload = _payload_from_create(item, color, user.timezone)
+    if not payload.get("complete"):
+        await _put_pending(session, conversation_id, request_id, payload)
+        text = _incomplete_text(item.item_type)
+        await _store_turn(
+            session,
+            conversation_id,
+            request_id=request_id,
+            user_text=data.text,
+            kind="clarify",
+            assistant_text=text,
+        )
+        return _reply(kind="clarify", text=text, request_id=request_id, proposal=payload)
     conflicts = await _conflicts(session, user, item)
     past = is_past(payload.get("date"), payload.get("time"), user.timezone)
     needs_confirm = data.require_confirmation or bool(conflicts) or past
@@ -1087,6 +1364,39 @@ async def _handle_create(
     return _reply(kind="created", text=text, request_id=request_id, events=[event], proposal=payload)
 
 
+async def _offer_declined_retry(
+    session: AsyncSession,
+    user: User,
+    conversation_id: int,
+    request_id: str,
+    data: MessageRequest,
+    command: AssistantCommand,
+    pending: AssistantProposal | None,
+) -> ReplyResponse | None:
+    spoken = for_model(data.text)
+    if not is_create_phrase(spoken) or not _asks_to_confirm(command.reply):
+        return None
+    rejected = _matching_rejected_create(
+        await assistant_repository.list_proposals(session, conversation_id),
+        spoken,
+        command.reply,
+    )
+    if rejected is None:
+        return None
+    try:
+        item = _item_from_payload(rejected.payload, user.timezone)
+    except (KeyError, TypeError, Unprocessable):
+        return None
+    synthetic = AssistantCommand(
+        action="create",
+        reply=command.reply,
+        item=item.model_dump(exclude_none=True),
+    )
+    return await _handle_create(
+        session, user, conversation_id, request_id, data, synthetic, pending
+    )
+
+
 async def _handle_none(
     session: AsyncSession,
     user: User,
@@ -1097,6 +1407,12 @@ async def _handle_none(
     pending: AssistantProposal | None,
 ) -> ReplyResponse:
     text = command.reply.strip() or "Уточните запрос"
+    if pending is None:
+        retried = await _offer_declined_retry(
+            session, user, conversation_id, request_id, data, command, pending
+        )
+        if retried is not None:
+            return retried
     color = _chosen_color(data, pending.payload if pending is not None else None)
     if pending is not None or color:
         payload = dict(pending.payload) if pending is not None else proposal_card(
@@ -1132,10 +1448,16 @@ async def _handle_none(
 
 
 async def history(
-    session: AsyncSession, user: User, session_id: str | None, limit: int
+    session: AsyncSession,
+    user: User,
+    session_id: str | None,
+    limit: int,
+    workspace_id: int | None = None,
 ) -> HistoryResponse:
+    if workspace_id is not None:
+        await workspace_service.get_owned(session, user, workspace_id)
     conversation = await assistant_repository.get_conversation(
-        session, user.id, _session_key(session_id)
+        session, user.id, _session_key(session_id, workspace_id)
     )
     if conversation is None:
         return HistoryResponse(messages=[])
@@ -1172,11 +1494,19 @@ async def history(
                 item["resolution"] = "declined"
             else:
                 item["resolution"] = None
-        if index == last_assistant and pending_color is not None:
-            item["pending_color"] = pending_color
-            if pending is not None and pending.status == "pending":
-                item["proposal"] = _public_proposal(pending.payload)
-                item["active_confirmation"] = pending.status == "pending" and (row.kind == "confirm")
+        if index == last_assistant and pending is not None and pending.status == "pending":
+            if pending_color is not None:
+                item["pending_color"] = pending_color
+            item["proposal"] = _public_proposal(pending.payload)
+            item["active_confirmation"] = row.kind == "confirm"
+            if row.kind == "confirm":
+                item["expecting"] = "confirmation"
+                item["suggestions"] = ["Да", "Нет"]
+            elif row.kind in {"choice", "clarify"}:
+                item["expecting"] = "choice"
+        elif item.get("active_confirmation") and row.kind == "confirm":
+            item["expecting"] = "confirmation"
+            item["suggestions"] = ["Да", "Нет"]
         out.append(item)
     return HistoryResponse(messages=out)
 

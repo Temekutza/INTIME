@@ -19,6 +19,16 @@ def _stub_llm(monkeypatch: pytest.MonkeyPatch, payload: dict | BaseException) ->
     monkeypatch.setattr("app.services.assistant_service.llm.complete", complete)
 
 
+def _stub_llm_calls(monkeypatch: pytest.MonkeyPatch, payloads: list[dict]) -> None:
+    queue = list(payloads)
+
+    async def complete(_messages: list[dict[str, str]]) -> dict:
+        assert queue, "неожиданный вызов модели"
+        return queue.pop(0)
+
+    monkeypatch.setattr("app.services.assistant_service.llm.complete", complete)
+
+
 def test_compat_health_does_not_need_login(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
@@ -138,6 +148,59 @@ def test_form_create_is_idempotent_and_conflicts_on_different_payload(
     assert len(client.get("/api/events").json()["events"]) == 1
 
 
+def test_create_requires_schedule_for_meeting_and_reminder(
+    client: TestClient, accounts: Accounts
+) -> None:
+    accounts.register()
+    meeting = client.post("/api/events", json={"type": "meeting", "title": "Стендап"})
+    assert meeting.status_code == 422
+    reminder = client.post(
+        "/api/events",
+        json={"type": "reminder", "title": "Позвонить", "date": "2028-06-01"},
+    )
+    assert reminder.status_code == 422
+    orphan_time = client.post(
+        "/api/events",
+        json={"type": "task", "title": "Звонок", "time": "18:00"},
+    )
+    assert orphan_time.status_code == 422
+    bad_date = client.post(
+        "/api/events",
+        json={"type": "task", "title": "Звонок", "date": "2026-02-30"},
+    )
+    assert bad_date.status_code == 422
+    assert client.get("/api/events").json()["events"] == []
+
+
+def test_message_meeting_without_time_asks_for_required_fields(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    _stub_llm(
+        monkeypatch,
+        {
+            "action": "create",
+            "reply": "Запишу встречу",
+            "item": {"item_type": "meeting", "title": "Стендап"},
+        },
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "need-time",
+            "request_id": "need-time-1",
+            "text": "Добавь встречу стендап",
+            "require_confirmation": True,
+        },
+    )
+    assert asked.status_code == 200, asked.text
+    body = asked.json()
+    assert body["kind"] == "clarify"
+    assert "дата и время" in body["text"].lower()
+    assert body["proposal"]["title"] == "Стендап"
+    assert client.get("/api/events").json()["events"] == []
+
+
 def test_meeting_conflict_and_past_date_ask_before_write(
     client: TestClient, accounts: Accounts
 ) -> None:
@@ -234,6 +297,8 @@ def test_message_requires_confirmation_and_restores_history(
     assert last["kind"] == "confirm"
     assert last["active_confirmation"] is True
     assert last["pending_color"] == "#2255aa"
+    assert last["expecting"] == "confirmation"
+    assert last["suggestions"] == ["Да", "Нет"]
 
     cancelled = client.post(
         "/api/message",
@@ -285,6 +350,175 @@ def test_message_requires_confirmation_and_restores_history(
         json={"session_id": "chat-1", "request_id": "msg-yes", "text": "Нет"},
     )
     assert clash.status_code == 409
+
+
+def test_message_none_with_item_still_asks_confirmation(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    _stub_llm(
+        monkeypatch,
+        {
+            "action": "none",
+            "reply": "Хотите создать задачу «Купить телефон» на среду?",
+            "item": {
+                "item_type": "task",
+                "title": "Купить телефон",
+                "due_on": "2026-11-11",
+            },
+        },
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "retry-item",
+            "request_id": "retry-item-1",
+            "text": "Поставь задачу Купить телефон в среду через неделю",
+            "require_confirmation": True,
+        },
+    )
+    assert asked.status_code == 200, asked.text
+    body = asked.json()
+    assert body["kind"] == "confirm"
+    assert body["expecting"] == "confirmation"
+    assert body["suggestions"] == ["Да", "Нет"]
+    assert body["proposal"]["title"] == "Купить телефон"
+    assert body["proposal"]["date"] == "2026-11-11"
+    assert client.get("/api/events").json()["events"] == []
+
+
+def test_message_retries_declined_create_when_model_only_asks(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    _stub_llm_calls(
+        monkeypatch,
+        [
+            {
+                "action": "create",
+                "reply": "Запишу задачу",
+                "item": {"item_type": "task", "title": "Купить телефон", "due_on": "2026-11-12"},
+            },
+            {
+                "action": "none",
+                "reply": "Вы уже отклонили эту задачу ранее. Хотите всё-таки создать задачу «Купить телефон» на среду следующей недели?",
+            },
+        ],
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "retry-ask",
+            "request_id": "retry-ask-1",
+            "text": "Поставь задачу Купить телефон",
+            "require_confirmation": True,
+        },
+    )
+    assert asked.json()["kind"] == "confirm"
+    cancelled = client.post(
+        "/api/message",
+        json={"session_id": "retry-ask", "request_id": "retry-ask-no", "text": "Нет"},
+    )
+    assert cancelled.json()["kind"] == "cancelled"
+
+    asked_again = client.post(
+        "/api/message",
+        json={
+            "session_id": "retry-ask",
+            "request_id": "retry-ask-2",
+            "text": "Поставь задачу Купить телефон в среду через неделю",
+            "require_confirmation": True,
+        },
+    )
+    assert asked_again.status_code == 200, asked_again.text
+    body = asked_again.json()
+    assert body["kind"] == "confirm"
+    assert body["expecting"] == "confirmation"
+    assert body["suggestions"] == ["Да", "Нет"]
+    assert body["proposal"]["title"] == "Купить телефон"
+    assert body["proposal"]["date"] == "2026-11-12"
+    assert client.get("/api/events").json()["events"] == []
+
+    created = client.post(
+        "/api/message",
+        json={"session_id": "retry-ask", "request_id": "retry-ask-yes", "text": "Да"},
+    )
+    assert created.json()["kind"] == "created"
+    events = client.get("/api/events").json()["events"]
+    assert len(events) == 1
+    assert events[0]["title"] == "Купить телефон"
+
+
+def test_message_none_without_item_stays_info(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    _stub_llm(
+        monkeypatch,
+        {"action": "none", "reply": "Уточните, что записать"},
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "none-info",
+            "request_id": "none-info-1",
+            "text": "запиши что-нибудь",
+            "require_confirmation": True,
+        },
+    )
+    assert asked.status_code == 200, asked.text
+    body = asked.json()
+    assert body["kind"] == "info"
+    assert body["suggestions"] == []
+    assert body["proposal"] is None
+    assert client.get("/api/events").json()["events"] == []
+
+
+def test_message_update_waits_for_confirmation(
+    client: TestClient, accounts: Accounts, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    accounts.register()
+    created = client.post(
+        "/api/events",
+        json={
+            "type": "task",
+            "title": "Документ task",
+            "request_id": "rename-src",
+        },
+    )
+    assert created.status_code == 200, created.text
+    event_id = created.json()["events"][0]["id"]
+    _stub_llm(
+        monkeypatch,
+        {
+            "action": "update",
+            "reply": "Переименую после подтверждения",
+            "item_id": event_id,
+            "item": {"title": "Новый документ task"},
+        },
+    )
+    asked = client.post(
+        "/api/message",
+        json={
+            "session_id": "rename-1",
+            "request_id": "rename-ask",
+            "text": "Переименуй задачу «Документ task» в «Новый документ task»",
+            "require_confirmation": True,
+        },
+    )
+    assert asked.status_code == 200, asked.text
+    assert asked.json()["kind"] == "confirm"
+    assert asked.json()["proposal"]["title"] == "Новый документ task"
+    assert asked.json()["expecting"] == "confirmation"
+    assert client.get("/api/events").json()["events"][0]["title"] == "Документ task"
+
+    confirmed = client.post(
+        "/api/message",
+        json={"session_id": "rename-1", "request_id": "rename-yes", "text": "Да"},
+    )
+    assert confirmed.json()["kind"] == "updated"
+    assert confirmed.json()["events"][0]["title"] == "Новый документ task"
+    assert client.get("/api/events").json()["events"][0]["title"] == "Новый документ task"
 
 
 def test_message_without_confirmation_writes_immediately(

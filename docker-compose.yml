@@ -25,6 +25,18 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   frontend:
     build: ./frontend
@@ -34,6 +46,12 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   litellm-db:
     image: postgres:16-alpine
@@ -102,6 +120,12 @@ services:
     volumes:
       - ./llm/gateway/docker_bridge.py:/bridge.py:ro
     command: ["python", "-u", "/bridge.py"]
+    healthcheck:
+      test: ["CMD", "python", "/bridge.py", "--health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
 volumes:
   postgres_data:

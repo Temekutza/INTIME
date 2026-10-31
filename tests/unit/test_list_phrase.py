@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from app.schemas.item import ItemRead
-from app.services.list_phrase import describe_items, match_list_phrase
+from app.services.list_phrase import describe_items, is_create_phrase, match_list_phrase
 
 ZONE = ZoneInfo("Europe/Moscow")
 NOW = datetime(2026, 10, 28, 12, 0, tzinfo=ZONE)
@@ -51,6 +51,13 @@ def test_create_and_confirmation_are_not_list_queries() -> None:
     assert match_list_phrase("да", NOW) is None
 
 
+def test_create_phrase_does_not_match_delete() -> None:
+    assert is_create_phrase("Поставь задачу Купить телефон в среду через неделю")
+    assert is_create_phrase("запиши встречу завтра")
+    assert not is_create_phrase("удали встречу завтра")
+    assert not is_create_phrase("да")
+
+
 def test_answer_comes_from_items() -> None:
     moment = datetime(2026, 10, 29, 7, 0, tzinfo=timezone.utc)
     item = ItemRead(
@@ -64,6 +71,7 @@ def test_answer_comes_from_items() -> None:
         due_on=None,
         due_at=None,
         remind_at=None,
+        workspace_id=1,
         created_at=moment,
         updated_at=moment,
     )

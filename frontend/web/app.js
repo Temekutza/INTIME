@@ -1,13 +1,16 @@
 "use strict";
 
 import { eventStore } from "./lib/store.js";
+import { workspaceStore } from "./lib/workspace.js";
 import { colorStore, paintObject, normalizeHex } from "./lib/colors.js";
 import { confirmationCard, resolveConfirmation } from "./lib/confirmation-card.js";
 import { maskProfanity } from "./lib/profanity.js";
 import { frameLevel, noteCapture } from "./lib/capture.js";
+import { icon as uiIcon } from "./lib/ui.js";
+import { workspaceUrl } from "./lib/api.js";
 
 (function () {
-  const DEFAULT_PLACEHOLDER = "Напишите, что нужно сделать…";
+  const defaultPlaceholder = () => window.matchMedia("(max-width: 1024px)").matches ? "Напишите или расскажите…" : "Напишите, что нужно сделать…";
   const PLACEHOLDERS = {
     title: "Напишите название…",
     date: "Напишите день…",
@@ -25,8 +28,6 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
   const SEND_ERROR = "Не удалось отправить. Проверьте соединение.";
   const TIMEOUT_MS = 20000;
   const MESSAGE_TIMEOUT_MS = 180000;
-  const CHECK_ICON = "M9 16.2l-3.5-3.5L4 14.2l5 5 11-11-1.5-1.5z";
-  const TRASH_ICON = "M9 3h6l1 2h4v2H4V5h4l1-2zm-3 6h12l-1 12H7L6 9zm4 2v8h1.5v-8H10zm3.5 0v8H15v-8h-1.5z";
 
   const dialogue = document.getElementById("dialogue");
   const dialogueScroll = document.getElementById("dialogue-scroll");
@@ -61,6 +62,10 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
   const micTimer = document.getElementById("mic-timer");
   const cardData = new WeakMap();
   const patching = new Set();
+  let activeWorkspaceId = Number.isSafeInteger(workspaceStore.currentId) ? workspaceStore.currentId : null;
+  let workspaceReady = false;
+  const workspaceDrafts = new Map();
+  const pendingKey = () => "ritm.pending.workspace." + (activeWorkspaceId || "none");
 
   const state = {
     sessionId: "",
@@ -142,7 +147,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
   }
 
   function readPending() {
-    const raw = readStore(sessionStorage, "ritm.pending");
+    const raw = readStore(sessionStorage, pendingKey());
     if (!raw) return null;
     try {
       const data = JSON.parse(raw);
@@ -155,7 +160,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
   }
 
   function savePending(pending) {
-    writeStore(sessionStorage, "ritm.pending", JSON.stringify({
+    writeStore(sessionStorage, pendingKey(), JSON.stringify({
       request_id: pending.request_id,
       text: pending.text,
       new_event_color: pending.new_event_color || null,
@@ -163,7 +168,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
   }
 
   function clearPending() {
-    removeStore(sessionStorage, "ritm.pending");
+    removeStore(sessionStorage, pendingKey());
   }
 
   function startOfToday() {
@@ -243,7 +248,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
     const parts = [typeLabel(event.type), formatMeta(event, true)];
     if (event.source === "archive") parts.push("архив");
     if (event.status === "done") parts.push("выполнена");
-    return parts.filter(Boolean).join(" · ");
+    return parts.filter(Boolean).join("  ");
   }
 
   function cardName(event) {
@@ -315,7 +320,25 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
     document.body.classList.add("is-empty");
   }
 
-  function setBusy(busy) {
+  function hideThinking() {
+    dialogue.querySelectorAll(".message-thinking").forEach((node) => node.remove());
+  }
+
+  function showThinking(requestId) {
+    hideThinking();
+    const item = el("li", "message message-assistant message-thinking");
+    if (requestId) item.dataset.requestId = requestId;
+    const status = el("p", "message__text thinking-indicator");
+    const dots = el("span", "thinking-dots");
+    dots.setAttribute("aria-hidden", "true");
+    dots.append(el("span"), el("span"), el("span"));
+    status.append(dots, el("span", "", "Думаю…"));
+    item.append(status);
+    dialogue.append(item);
+    scrollDialogue();
+  }
+
+  function setBusy(busy, requestId) {
     state.sending = busy;
     messageInput.disabled = busy;
     sendButton.disabled = busy || state.recording;
@@ -323,20 +346,17 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
     suggestions.querySelectorAll("button").forEach((button) => {
       button.disabled = busy;
     });
-    document.querySelectorAll("article.event-card").forEach((card) => {
-      card.querySelectorAll("button").forEach((button) => {
-        button.disabled = busy || eventStore.saving.has(Number(card.dataset.eventId));
-      });
-    });
     dialogueScroll.setAttribute("aria-busy", busy ? "true" : "false");
     dialogue.querySelectorAll('.confirmation-card[data-state="pending"] .confirmation-card__status').forEach(node => {
       node.textContent = busy ? "Обработка действия…" : "Ожидает подтверждения";
     });
+    if (busy) showThinking(requestId);
+    else hideThinking();
     colorStore.changed();
   }
 
   function resetPlaceholder() {
-    messageInput.placeholder = DEFAULT_PLACEHOLDER;
+    messageInput.placeholder = defaultPlaceholder();
     messageInput.removeAttribute("aria-describedby");
   }
 
@@ -377,7 +397,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
   function applyReplyChrome(data) {
     const expecting = data.expecting || null;
     const labels = Array.isArray(data.suggestions) ? data.suggestions.map(String) : [];
-    messageInput.placeholder = PLACEHOLDERS[expecting] || DEFAULT_PLACEHOLDER;
+    messageInput.placeholder = PLACEHOLDERS[expecting] || defaultPlaceholder();
     if (expecting) messageInput.setAttribute("aria-describedby", "composer-status last-reply-text");
     else messageInput.removeAttribute("aria-describedby");
     renderSuggestions(labels, expecting);
@@ -388,7 +408,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
   }
 
   function findAssistantMessage(requestId) {
-    return dialogue.querySelector('.message-assistant[data-request-id="' + escapeAttr(requestId) + '"]');
+    return dialogue.querySelector('.message-assistant[data-request-id="' + escapeAttr(requestId) + '"]:not(.message-thinking)');
   }
 
   function removeSendError(requestId) {
@@ -459,6 +479,9 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
     body.append(el("h3", "event-card__title", title), el("p", "event-card__meta", cardMeta(event)));
 
     const actions = el("div", "event-card__actions");
+    const edit = el("button", "card-action", "Редактировать"); edit.type = "button";
+    edit.addEventListener("click", () => window.dispatchEvent(new CustomEvent("ritm:edit-event", { detail: { id: event.id } })));
+    actions.append(edit);
     if (options.showChoice) {
       const choose = el("button", "choice-btn", "Выбрать");
       choose.type = "button";
@@ -479,7 +502,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
       });
       actions.append(doneButton);
     }
-    const remove = iconButton(TRASH_ICON, "Удалить «" + title + "»", "Удалить");
+    const remove = iconButton("trash", "Удалить «" + title + "»", "Удалить");
     remove.dataset.action = "delete";
     remove.addEventListener("click", () => {
       onDeleteClick(event, remove);
@@ -490,22 +513,12 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
     return article;
   }
 
-  function iconButton(path, label, hint) {
+  function iconButton(name, label, hint) {
     const button = el("button", "icon-btn");
     button.type = "button";
     button.setAttribute("aria-label", label);
     button.title = hint;
-    const svg = document.createElementNS(sendButton.querySelector("svg").namespaceURI, "svg");
-    svg.setAttribute("viewBox", "0 0 24 24");
-    svg.setAttribute("width", "18");
-    svg.setAttribute("height", "18");
-    svg.setAttribute("aria-hidden", "true");
-    svg.setAttribute("focusable", "false");
-    const shape = document.createElementNS(svg.namespaceURI, "path");
-    shape.setAttribute("fill", "currentColor");
-    shape.setAttribute("d", path);
-    svg.append(shape);
-    button.append(svg);
+    button.append(uiIcon(name));
     return button;
   }
 
@@ -674,6 +687,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
 
   function beginSend(pending, isNew) {
     if (state.sending) return;
+    if (!workspaceStore.loaded || !workspaceStore.workspaces.length) { sayStatus(workspaceStore.error || "Загружаются пространства. Подождите немного."); return; }
     savePending(pending);
     if (isNew) {
       removeAllSendErrors();
@@ -685,30 +699,35 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
       removeSendError(pending.request_id);
     }
     cancelSpeech();
-    setBusy(true);
+    setBusy(true, pending.request_id);
     sayStatus("Думаю…");
     sendPending(pending);
   }
 
   async function sendPending(pending) {
+    const requestWorkspace = activeWorkspaceId;
+    const requestSession = state.sessionId;
     let response;
     try {
       response = await request("/api/message", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          session_id: state.sessionId,
+          session_id: requestSession,
           request_id: pending.request_id,
           text: pending.text,
           new_event_color: pending.new_event_color || null,
           require_confirmation: true,
+          workspace_id: requestWorkspace,
         }),
       }, MESSAGE_TIMEOUT_MS);
     } catch (error) {
+      if (requestWorkspace !== activeWorkspaceId) return;
       setBusy(false);
       showSendError(pending, SEND_ERROR, true);
       return;
     }
+    if (requestWorkspace !== activeWorkspaceId || requestSession !== state.sessionId) return;
     if (response.status === 200) {
       let data;
       try {
@@ -869,13 +888,15 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
   async function loadHistory() {
     const generation = ++state.historyGeneration;
     const sessionId = state.sessionId;
-    historyStatus.hidden = true;
-    historyStatus.textContent = "";
+    const workspaceId = activeWorkspaceId;
+    if (!Number.isSafeInteger(workspaceId) || workspaceId < 1) return;
+    historyStatus.hidden = false;
+    historyStatus.textContent = "Загружаю диалог…";
     liveStatus.textContent = "Загружаю диалог…";
     historyRetry.hidden = true;
     try {
       const response = await fetch(
-        "/api/history?session_id=" + encodeURIComponent(sessionId) + "&limit=50",
+        "/api/history?session_id=" + encodeURIComponent(sessionId) + "&limit=50&workspace_id=" + workspaceId,
         { signal: AbortSignal.timeout(TIMEOUT_MS) },
       );
       if (!response.ok) throw new Error("history");
@@ -1018,7 +1039,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
     confirmRetry.disabled = true;
     let response;
     try {
-      response = await request("/api/events/" + encodeURIComponent(String(event.id)), {
+      response = await request(workspaceUrl("/api/events/" + encodeURIComponent(String(event.id)), activeWorkspaceId), {
         method: "DELETE",
       });
       if (!response.ok) throw new Error("delete");
@@ -1732,7 +1753,7 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
           card = next;
         }
         const busy = eventStore.saving.has(Number(card.dataset.eventId));
-        card.querySelectorAll("button").forEach((button) => { button.disabled = busy || state.sending; });
+        card.querySelectorAll("button").forEach((button) => { button.disabled = busy; });
       });
     });
     function stopHiddenVoice() {
@@ -1743,7 +1764,10 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
     window.addEventListener("pagehide", stopHiddenVoice);
     document.getElementById("skip-to-input").addEventListener("click", (event) => {
       event.preventDefault();
-      document.getElementById("assistant-open").click();
+      const mobileOpen = document.getElementById("mobile-ai-open");
+      if (window.matchMedia("(max-width: 1024px)").matches && mobileOpen instanceof HTMLElement) {
+        if (mobileOpen.getAttribute("aria-expanded") !== "true") mobileOpen.click();
+      } else document.getElementById("assistant-open").click();
       messageInput.focus();
     });
     composer.addEventListener("submit", (event) => {
@@ -1776,6 +1800,10 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
       writeStore(localStorage, "ritm.speech", state.speechOn ? "on" : "off");
       renderSpeechToggle();
       if (!state.speechOn) cancelSpeech();
+      else {
+        try { window.speechSynthesis.resume(); } catch { /* browser may not implement resume */ }
+        speak(state.lastReply?.speech || "Озвучивание включено");
+      }
     });
     speechStop.addEventListener("click", () => {
       cancelSpeech();
@@ -1798,11 +1826,31 @@ import { frameLevel, noteCapture } from "./lib/capture.js";
   }
 
   state.sessionId = ensureSessionId();
+  window.addEventListener("ritm:workspace-before-change", event => {
+    if (state.sending || state.recording || state.localFinishing || state.deleteFlight || state.confirm || patching.size) event.preventDefault();
+  });
+  window.addEventListener("ritm:workspace-changed", event => {
+    const next = event.detail && event.detail.id;
+    if (!Number.isSafeInteger(next) || next < 1) return;
+    if (workspaceReady && next === activeWorkspaceId) return;
+    if (workspaceReady) workspaceDrafts.set(activeWorkspaceId, messageInput.value);
+    else workspaceDrafts.set(next, messageInput.value);
+    activeWorkspaceId = next; workspaceReady = true;
+    state.historyGeneration += 1; state.posted = false; state.lastReply = null;
+    cancelSpeech(); dialogue.replaceChildren(); clearSuggestions(); resetPlaceholder();
+    pendingHint.hidden = true; composerStatus.textContent = "";
+    messageInput.value = workspaceDrafts.get(next) || ""; resizeInput();
+    colorStore.creationColor = null; colorStore.changed();
+    enterEmpty(); loadHistory();
+  });
   setupSpeech();
   setupRecognition();
+  window.addEventListener("ritm:event-deleted", event => {
+    dialogue.querySelectorAll(`[data-event-id="${event.detail.id}"]`).forEach(card => card.remove());
+  });
   bind();
   resizeInput();
   maybeNewDay();
-  loadHistory();
+  if (workspaceStore.loaded) loadHistory();
   // Dashboard navigation keeps focus until the user opens the composer.
 })();

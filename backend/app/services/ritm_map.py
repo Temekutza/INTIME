@@ -40,6 +40,7 @@ def event_from_item(item: PlannerItem, status: str, timezone: str) -> RitmEvent:
         created_at=_stamp(item.created_at),
         updated_at=_stamp(item.updated_at),
         deleted_at=_stamp(item.deleted_at) if item.deleted_at else None,
+        workspace_id=item.workspace_id,
     )
 
 
@@ -52,6 +53,7 @@ def item_create_from_ritm(
     duration_min: int | None,
     is_deadline: bool,
     timezone: str,
+    workspace_id: int | None = None,
 ) -> ItemCreate:
     schedule = schedule_from_ritm(
         item_type=item_type,
@@ -61,7 +63,7 @@ def item_create_from_ritm(
         is_deadline=is_deadline,
         timezone=timezone,
     )
-    return ItemCreate(item_type=item_type, title=title, **schedule)
+    return ItemCreate(item_type=item_type, title=title, workspace_id=workspace_id, **schedule)
 
 
 def schedule_from_ritm(

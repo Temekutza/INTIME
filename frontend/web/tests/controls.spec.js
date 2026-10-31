@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-const artifacts = process.env.INTIME_TEST_ARTIFACTS || path.join(os.tmpdir(), "intime-controls-qa");
+const artifacts = process.env.AIVRITM_TEST_ARTIFACTS || path.join(os.tmpdir(), "aivritm-controls-qa");
 let baseline;
 test.beforeAll(async ({ request }) => { baseline = (await (await request.get("/api/events")).json()).events; });
 test.beforeEach(async ({ page }) => {
@@ -137,20 +137,23 @@ test("lost confirmation response retries one creation with the same request ID",
 });
 
 test("pending creation color survives reload during time clarification", async ({ page, request }) => {
-  await loaded(page); await expect(page.getByRole("button", { name: "Цвет новой записи", exact: true })).toBeEnabled();
-  await page.getByRole("button", { name: "Цвет новой записи", exact: true }).click();
+  await loaded(page); await page.getByRole("button", { name: "Настройки цветов", exact: true }).click();
+  await page.getByRole("button", { name: "Стандартный цвет: Встречи", exact: true }).click();
   const picker = page.locator(".color-popover:popover-open");
   await picker.getByRole("textbox", { name: "HEX-цвет" }).fill("#2255aa");
   await picker.getByRole("button", { name: "Применить цвет", exact: true }).click();
+  await page.getByRole("button", { name: "Закрыть настройки цветов" }).click();
   await page.locator("#message-input").fill("Добавь встречу с командой восстановления цвета завтра"); await page.locator("#message-input").press("Enter");
   await expect(page.locator(".message-assistant").last()).toContainText("На какое время");
   await page.reload();
-  await expect(page.getByRole("button", { name: "Цвет новой записи", exact: true })).toContainText("#2255AA");
+  await expect(page.locator("#creation-colors")).toHaveCount(0);
   await page.locator("#message-input").fill("в 18:30"); await page.locator("#message-input").press("Enter");
   await page.getByRole("button", { name: "Подтвердить", exact: true }).click();
   await expect(page.locator("#dialogue .event-card").last()).toContainText("командой восстановления цвета");
   const event = (await (await request.get("/api/events")).json()).events.find(item => /командой восстановления цвета/i.test(item.title));
-  expect((await (await request.get("/api/colors")).json()).overrides[String(event.id)]).toBe("#2255aa");
+  expect((await (await request.get("/api/colors")).json()).defaults.meeting).toBe("#2255aa");
+  expect((await (await request.get("/api/colors")).json()).overrides[String(event.id)]).toBeUndefined();
+  await request.patch("/api/colors/defaults/meeting", { data: { color: null } });
 });
 
 for (const [width, height] of [[1280, 800], [1366, 768], [1440, 900], [1536, 864], [1536, 960], [1920, 1080]]) {

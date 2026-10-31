@@ -8,6 +8,7 @@ from app.core.errors import NotFound, Unprocessable
 from app.models.planner_item import PlannerItem
 from app.models.user import User
 from app.repositories import catalog_repository, item_repository
+from app.services import workspace_service
 from app.repositories.item_repository import ItemFilters
 from app.schemas.item import ItemCreate, ItemList, ItemQuery, ItemRead, ItemUpdate
 from app.services.text_guard import ensure_plain
@@ -31,6 +32,7 @@ def to_read(item: PlannerItem, status: str) -> ItemRead:
         due_on=item.due_on,
         due_at=item.due_at,
         remind_at=item.remind_at,
+        workspace_id=item.workspace_id,
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
@@ -69,8 +71,10 @@ async def create_item(session: AsyncSession, user: User, data: ItemCreate) -> It
         due_at=data.due_at,
         remind_at=data.remind_at,
     )
+    workspace_id = await workspace_service.resolve_id(session, user, data.workspace_id)
     item = PlannerItem(
         user_id=user.id,
+        workspace_id=workspace_id,
         item_type_code=data.item_type,
         status_id=status.id,
         title=data.title,
@@ -90,6 +94,8 @@ async def create_item(session: AsyncSession, user: User, data: ItemCreate) -> It
 async def list_items(session: AsyncSession, user: User, query: ItemQuery) -> ItemList:
     if query.start and query.end and query.start > query.end:
         raise Unprocessable("Начало интервала позже конца")
+    if query.workspace_id is not None:
+        await workspace_service.get_owned(session, user, query.workspace_id)
     zone = ZoneInfo(user.timezone)
     text = query.q.strip() if query.q else None
     filters = ItemFilters(
@@ -102,6 +108,7 @@ async def list_items(session: AsyncSession, user: User, query: ItemQuery) -> Ite
         end_date=query.end.astimezone(zone).date() if query.end else None,
         limit=query.limit,
         offset=query.offset,
+        workspace_id=query.workspace_id,
     )
     rows, total = await item_repository.list_items(session, user.id, filters)
     return ItemList(items=[to_read(item, status) for item, status in rows], total=total)

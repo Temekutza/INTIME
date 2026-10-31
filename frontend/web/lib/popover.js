@@ -6,6 +6,23 @@ export class AnchoredPopover {
     this.trigger = trigger; this.panel = panel; panel.popover = "auto";
     this.position = () => {
       if (!panel.matches(":popover-open")) return;
+      const viewportHeight = window.visualViewport?.height || innerHeight;
+      if (window.matchMedia("(max-width: 1024px)").matches) {
+        panel.style.left = "0";
+        panel.style.right = "0";
+        panel.style.top = "auto";
+        panel.style.bottom = "0";
+        panel.style.width = "100%";
+        panel.style.maxWidth = "100%";
+        panel.style.maxHeight = Math.max(180, viewportHeight * 0.72) + "px";
+        panel.style.borderRadius = "18px 18px 0 0";
+        return;
+      }
+      panel.style.right = "";
+      panel.style.bottom = "";
+      panel.style.width = "";
+      panel.style.maxWidth = "";
+      panel.style.borderRadius = "";
       panel.style.maxHeight = Math.max(100, innerHeight - 24) + "px";
       const anchor = trigger.getBoundingClientRect(), box = panel.getBoundingClientRect();
       panel.style.left = Math.max(12, Math.min(anchor.left, innerWidth - box.width - 12)) + "px";

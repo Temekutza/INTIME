@@ -11,6 +11,7 @@ class PlannerItem(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"))
+    workspace_id: Mapped[int] = mapped_column(BigInteger)
     item_type_code: Mapped[str] = mapped_column(Text, ForeignKey("item_types.code"))
     status_id: Mapped[int] = mapped_column(SmallInteger, ForeignKey("item_statuses.id"))
     title: Mapped[str] = mapped_column(Text)

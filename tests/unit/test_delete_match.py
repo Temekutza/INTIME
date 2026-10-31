@@ -22,6 +22,7 @@ def _task(item_id: int, title: str, hour: int) -> ItemRead:
         due_on=None,
         due_at=moment,
         remind_at=None,
+        workspace_id=1,
         created_at=stamp,
         updated_at=stamp,
     )

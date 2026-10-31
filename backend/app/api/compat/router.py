@@ -1,11 +1,13 @@
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from sqlalchemy import text
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.compat.deps import CompatUser
+from app.api.v1.health import readiness_response
 from app.core.database import get_session
+from app.schemas.workspace import WorkspaceCreate, WorkspaceList, WorkspaceRead, WorkspaceUpdate
 from app.schemas.ritm import (
     ColorBody,
     ColorDefaultResponse,
@@ -23,15 +25,41 @@ from app.schemas.ritm import (
     SearchResponse,
     TranscriptionOut,
 )
-from app.services import compat_service
+from app.services import compat_service, workspace_service
 
 router = APIRouter()
 
 
+@router.get("/workspaces", response_model=WorkspaceList)
+async def list_workspaces(
+    user: CompatUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> WorkspaceList:
+    return await workspace_service.list_workspaces(session, user)
+
+
+@router.post("/workspaces", response_model=WorkspaceRead, status_code=201)
+async def create_workspace(
+    data: WorkspaceCreate,
+    user: CompatUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> WorkspaceRead:
+    return await workspace_service.create_workspace(session, user, data)
+
+
+@router.patch("/workspaces/{workspace_id}", response_model=WorkspaceRead)
+async def update_workspace(
+    workspace_id: int,
+    data: WorkspaceUpdate,
+    user: CompatUser,
+    session: Annotated[AsyncSession, Depends(get_session)],
+) -> WorkspaceRead:
+    return await workspace_service.rename_workspace(session, user, workspace_id, data)
+
+
 @router.get("/health")
-async def health(session: Annotated[AsyncSession, Depends(get_session)]) -> dict[str, str]:
-    await session.execute(text("SELECT 1"))
-    return {"status": "ok", "database": "ok"}
+async def health() -> JSONResponse:
+    return await readiness_response()
 
 
 @router.get("/events", response_model=EventListResponse)
@@ -40,8 +68,11 @@ async def list_events(
     session: Annotated[AsyncSession, Depends(get_session)],
     type: Annotated[EventType | None, Query()] = None,
     status: Annotated[EventStatus | None, Query()] = None,
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> EventListResponse:
-    return await compat_service.list_events(session, user, item_type=type, status=status)
+    return await compat_service.list_events(
+        session, user, item_type=type, status=status, workspace_id=workspace_id
+    )
 
 
 @router.post("/events", response_model=ReplyResponse)
@@ -58,8 +89,9 @@ async def get_event(
     event_id: int,
     user: CompatUser,
     session: Annotated[AsyncSession, Depends(get_session)],
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> RitmEvent:
-    return await compat_service.get_event(session, user, event_id)
+    return await compat_service.get_event(session, user, event_id, workspace_id)
 
 
 @router.patch("/events/{event_id}", response_model=RitmEvent)
@@ -68,8 +100,9 @@ async def patch_event(
     data: EventPatchRequest,
     user: CompatUser,
     session: Annotated[AsyncSession, Depends(get_session)],
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> RitmEvent:
-    return await compat_service.patch_event(session, user, event_id, data)
+    return await compat_service.patch_event(session, user, event_id, data, workspace_id)
 
 
 @router.delete("/events/{event_id}", status_code=204)
@@ -77,8 +110,9 @@ async def delete_event(
     event_id: int,
     user: CompatUser,
     session: Annotated[AsyncSession, Depends(get_session)],
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> Response:
-    await compat_service.delete_event(session, user, event_id)
+    await compat_service.delete_event(session, user, event_id, workspace_id)
     return Response(status_code=204)
 
 
@@ -88,8 +122,11 @@ async def patch_event_color(
     data: ColorBody,
     user: CompatUser,
     session: Annotated[AsyncSession, Depends(get_session)],
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> ColorOverrideResponse:
-    return await compat_service.set_event_color(session, user, event_id, data.color)
+    return await compat_service.set_event_color(
+        session, user, event_id, data.color, workspace_id
+    )
 
 
 @router.get("/search", response_model=SearchResponse)
@@ -98,8 +135,9 @@ async def search_events(
     session: Annotated[AsyncSession, Depends(get_session)],
     q: Annotated[str, Query(max_length=200)] = "",
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> SearchResponse:
-    return await compat_service.search_events(session, user, q, limit)
+    return await compat_service.search_events(session, user, q, limit, workspace_id)
 
 
 @router.get("/colors", response_model=ColorSnapshot)
@@ -135,8 +173,9 @@ async def get_history(
     session: Annotated[AsyncSession, Depends(get_session)],
     session_id: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    workspace_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> HistoryResponse:
-    return await compat_service.history(session, user, session_id, limit)
+    return await compat_service.history(session, user, session_id, limit, workspace_id)
 
 
 @router.post("/speech", response_model=TranscriptionOut)

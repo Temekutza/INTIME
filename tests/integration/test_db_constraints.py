@@ -33,7 +33,12 @@ def _status_id(pg: psycopg.Connection, item_type: str, code: str) -> int:
 
 def test_schema_sql_files_applied(test_database: PostgresTarget, pg: psycopg.Connection) -> None:
     names = [path.name for path in test_database.sql_files]
-    assert names == ["001_init.sql", "002_sessions.sql", "003_interface_fields.sql"]
+    assert names == [
+        "001_init.sql",
+        "002_sessions.sql",
+        "003_interface_fields.sql",
+        "004_workspaces.sql",
+    ]
     tables = {
         row[0]
         for row in pg.execute(
@@ -51,6 +56,7 @@ def test_schema_sql_files_applied(test_database: PostgresTarget, pg: psycopg.Con
         "assistant_conversations",
         "assistant_messages",
         "assistant_proposals",
+        "workspaces",
     }
 
 
@@ -344,3 +350,94 @@ def test_proposal_request_id_unique_in_conversation(pg: psycopg.Connection) -> N
             """,
             (conversation_id,),
         )
+
+
+def _default_workspace_id(pg: psycopg.Connection, user_id: int) -> int:
+    row = pg.execute(
+        "SELECT id, name, is_default FROM workspaces WHERE user_id = %s",
+        (user_id,),
+    ).fetchone()
+    assert row is not None
+    assert row[1] == "Общее пространство"
+    assert row[2] is True
+    return int(row[0])
+
+
+def test_new_user_gets_default_workspace(pg: psycopg.Connection) -> None:
+    user_id = _user_id(pg, "space-user")
+    workspace_id = _default_workspace_id(pg, user_id)
+    count = pg.execute(
+        "SELECT COUNT(*) FROM workspaces WHERE user_id = %s",
+        (user_id,),
+    ).fetchone()
+    assert count is not None and count[0] == 1
+    assert workspace_id >= 1
+
+
+def test_workspace_name_unique_per_user(pg: psycopg.Connection) -> None:
+    user_id = _user_id(pg, "space-one")
+    pg.execute(
+        "INSERT INTO workspaces (user_id, name) VALUES (%s, %s)",
+        (user_id, "Работа"),
+    )
+    with pytest.raises(UniqueViolation):
+        pg.execute(
+            "INSERT INTO workspaces (user_id, name) VALUES (%s, %s)",
+            (user_id, "работа"),
+        )
+    other = _user_id(pg, "space-two")
+    pg.execute(
+        "INSERT INTO workspaces (user_id, name) VALUES (%s, %s)",
+        (other, "Работа"),
+    )
+
+
+def test_item_gets_default_workspace_and_rejects_foreign(pg: psycopg.Connection) -> None:
+    owner = _user_id(pg, "space-owner")
+    other = _user_id(pg, "space-other")
+    status_id = _status_id(pg, "task", "todo")
+    default_id = _default_workspace_id(pg, owner)
+    other_space = _default_workspace_id(pg, other)
+    row = pg.execute(
+        """
+        INSERT INTO planner_items (user_id, item_type_code, status_id, title)
+        VALUES (%s, 'task', %s, 'Без пространства')
+        RETURNING workspace_id
+        """,
+        (owner, status_id),
+    ).fetchone()
+    assert row is not None and int(row[0]) == default_id
+    with pytest.raises(ForeignKeyViolation):
+        pg.execute(
+            """
+            INSERT INTO planner_items (
+                user_id, workspace_id, item_type_code, status_id, title
+            )
+            VALUES (%s, %s, 'task', %s, 'Чужое пространство')
+            """,
+            (owner, other_space, status_id),
+        )
+
+
+def test_cannot_delete_workspace_with_items(pg: psycopg.Connection) -> None:
+    user_id = _user_id(pg, "space-keep")
+    status_id = _status_id(pg, "task", "todo")
+    space = pg.execute(
+        """
+        INSERT INTO workspaces (user_id, name) VALUES (%s, %s) RETURNING id
+        """,
+        (user_id, "Работа"),
+    ).fetchone()
+    assert space is not None
+    workspace_id = int(space[0])
+    pg.execute(
+        """
+        INSERT INTO planner_items (
+            user_id, workspace_id, item_type_code, status_id, title
+        )
+        VALUES (%s, %s, 'task', %s, 'Отчёт')
+        """,
+        (user_id, workspace_id, status_id),
+    )
+    with pytest.raises(ForeignKeyViolation):
+        pg.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))

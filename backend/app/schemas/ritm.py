@@ -1,11 +1,14 @@
 import re
+from datetime import date as Date
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 EventType = Literal["task", "meeting", "reminder"]
 EventStatus = Literal["planned", "done"]
 HEX = r"^#[0-9a-f]{6}$"
+DATE = r"^\d{4}-\d{2}-\d{2}$"
+TIME = r"^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$"
 
 
 class RitmEvent(BaseModel):
@@ -22,6 +25,7 @@ class RitmEvent(BaseModel):
     created_at: str
     updated_at: str
     deleted_at: str | None = None
+    workspace_id: int | None = None
 
 
 class EventListResponse(BaseModel):
@@ -48,6 +52,7 @@ class EventCreateRequest(BaseModel):
     color: str | None = None
     session_id: str | None = None
     request_id: str | None = None
+    workspace_id: int | None = Field(default=None, ge=1)
 
     @field_validator("title")
     @classmethod
@@ -67,6 +72,24 @@ class EventCreateRequest(BaseModel):
     def id_ok(cls, value: str | None) -> str | None:
         return _optional_id(value)
 
+    @field_validator("date")
+    @classmethod
+    def date_ok(cls, value: str | None) -> str | None:
+        return _optional_day(value)
+
+    @field_validator("time")
+    @classmethod
+    def time_ok(cls, value: str | None) -> str | None:
+        return _optional_clock(value)
+
+    @model_validator(mode="after")
+    def required_fields(self) -> "EventCreateRequest":
+        if self.time and not self.date:
+            raise ValueError("Для времени укажите дату")
+        if self.type in {"meeting", "reminder"} and (not self.date or not self.time):
+            raise ValueError("Для встречи или напоминания нужны дата и время")
+        return self
+
 
 class EventPatchRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -85,6 +108,22 @@ class EventPatchRequest(BaseModel):
         if not text or len(text) > 300:
             raise ValueError("Название должно содержать от 1 до 300 символов")
         return text
+
+    @field_validator("date")
+    @classmethod
+    def date_ok(cls, value: str | None) -> str | None:
+        return _optional_day(value)
+
+    @field_validator("time")
+    @classmethod
+    def time_ok(cls, value: str | None) -> str | None:
+        return _optional_clock(value)
+
+    @model_validator(mode="after")
+    def time_needs_date(self) -> "EventPatchRequest":
+        if self.time and not self.date and "time" in self.model_fields_set and "date" in self.model_fields_set:
+            raise ValueError("Для времени укажите дату")
+        return self
 
 
 class ColorBody(BaseModel):
@@ -121,6 +160,7 @@ class MessageRequest(BaseModel):
     request_id: str | None = None
     new_event_color: str | None = None
     require_confirmation: bool = False
+    workspace_id: int | None = Field(default=None, ge=1)
 
     @field_validator("text")
     @classmethod
@@ -164,6 +204,34 @@ def _optional_id(value: str | None) -> str | None:
         return None
     text = value.strip()
     return text or None
+
+
+def _optional_day(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if re.fullmatch(DATE, text) is None:
+        raise ValueError("Проверьте дату")
+    try:
+        parsed = Date.fromisoformat(text)
+    except ValueError as exc:
+        raise ValueError("Проверьте дату") from exc
+    if parsed.isoformat() != text:
+        raise ValueError("Проверьте дату")
+    return text
+
+
+def _optional_clock(value: str | None) -> str | None:
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if re.fullmatch(TIME, text) is None:
+        raise ValueError("Проверьте время")
+    return text[:5]
 
 
 def _hex(value: str | None) -> str | None:

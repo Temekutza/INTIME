@@ -1,5 +1,6 @@
 // @ts-check
-import { requestJson } from "./api.js";
+import { requestJson, workspaceUrl } from "./api.js";
+import { workspaceStore } from "./workspace.js";
 /** @typedef {import('./types').EventType} EventType */
 /** @typedef {import('./types').RitmEvent} RitmEvent */
 /** @type {Readonly<Record<EventType, string>>} */
@@ -93,7 +94,7 @@ export class ColorStore extends EventTarget {
     this.busy = true; this.revision += 1; this.changed();
     try {
       const object = typeof target === "number";
-      const url = object ? `/api/events/${target}/color` : `/api/colors/defaults/${target}`;
+      const url = object ? workspaceUrl(`/api/events/${target}/color`, workspaceStore.currentId) : `/api/colors/defaults/${target}`;
       const result = await requestJson(url, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ color }) });
       if (typeof result !== "object" || result === null || !("color" in result) || result.color !== color ||
         (object ? !("event_id" in result) || result.event_id !== target : !("type" in result) || result.type !== target)) throw new Error("Некорректное подтверждение цвета.");

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { eventMeta, groupTasks, isoDay, relativeTime, sortedEvents, validatePatch } from "../lib/model.js";
-import { isEvent, listEvents, patchEvent, searchEvents } from "../lib/api.js";
+import { eventMeta, fieldErrors, groupReminders, groupTasks, isoDay, relativeTime, sortedEvents, validatePatch } from "../lib/model.js";
+import { isEvent, isWorkspace, listEvents, listWorkspaces, patchEvent, searchEvents } from "../lib/api.js";
 
 export const event = (id = 1, extra = {}) => ({
   id, type: "task", title: "Материалы", date: "2026-10-30", time: "12:00", duration_min: null,
@@ -39,6 +39,16 @@ test("groups use only real task statuses", () => {
   assert.deepEqual(groups.done.map(e => e.id), [2]);
 });
 
+test("reminder groups split planned and done like tasks", () => {
+  const groups = groupReminders([
+    event(1, { type: "reminder" }),
+    event(2, { type: "reminder", status: "done" }),
+    event(3, { type: "task" }),
+  ]);
+  assert.deepEqual(groups.planned.map(e => e.id), [1]);
+  assert.deepEqual(groups.done.map(e => e.id), [2]);
+});
+
 test("patch validation rejects impossible dates, empty names, orphan times and unsupported statuses", () => {
   assert.throws(() => validatePatch(event(), " ", "", "", "planned"));
   assert.throws(() => validatePatch(event(), "x", "2026-02-30", "", "planned"));
@@ -47,6 +57,14 @@ test("patch validation rejects impossible dates, empty names, orphan times and u
   assert.throws(() => validatePatch(event(), "x", "", "", "progress"));
   assert.throws(() => validatePatch(event(1, { type: "reminder" }), "x", "", "", "planned"));
   assert.deepEqual(validatePatch(event(), "  x  ", "", "", "done"), { title: "x", date: null, time: null, status: "done" });
+});
+
+test("required meeting fields mark date, time and duration together", () => {
+  const errors = fieldErrors({ type: "meeting" }, "Стендап", "", "", "planned", { duration: "" });
+  assert.equal(errors.date, "Для встречи или напоминания нужны дата и время.");
+  assert.equal(errors.time, "Для встречи или напоминания нужны дата и время.");
+  assert.equal(errors.duration, "Укажите длительность от 1 до 1440 минут.");
+  assert.deepEqual(fieldErrors({ type: "task" }, "Отчёт", "", "", "planned"), {});
 });
 
 test("API DTO validation rejects incomplete or unsupported event responses", () => {
@@ -63,11 +81,35 @@ test("API rejects HTTP and schema failures; search encodes query and uses server
   await assert.rejects(listEvents(), /Нет доступа/);
   globalThis.fetch = async () => Response.json({ events: [{ id: 1 }] });
   await assert.rejects(listEvents(), /формат/);
-  globalThis.fetch = async () => Response.json({ hits: [{ event: event() }] });
-  assert.equal((await searchEvents("макет & материалы", new AbortController().signal))[0].id, 1);
+  let searchUrl = "";
+  globalThis.fetch = async url => { searchUrl = String(url); return Response.json({ hits: [{ event: event() }] }); };
+  assert.equal((await searchEvents("макет & материалы", new AbortController().signal, 9))[0].id, 1);
+  assert.match(searchUrl, /q=/);
+  assert.match(searchUrl, /limit=20/);
+  assert.match(searchUrl, /workspace_id=9/);
   let request;
   globalThis.fetch = async (url, options) => { request = { url, options }; return Response.json(event()); };
   await patchEvent(1, { status: "done" });
   assert.equal(request.url, "/api/events/1");
   assert.deepEqual(JSON.parse(request.options.body), { status: "done" });
+  let defaultUrl = "";
+  globalThis.fetch = async url => { defaultUrl = String(url); return Response.json({ events: [event()] }); };
+  await listEvents(undefined, 1);
+  assert.match(defaultUrl, /\/api\/events\?workspace_id=1/);
+  let defaultSearch = "";
+  globalThis.fetch = async url => { defaultSearch = String(url); return Response.json({ hits: [{ event: event() }] }); };
+  await searchEvents("макет", new AbortController().signal, 1);
+  assert.match(defaultSearch, /workspace_id=1/);
+});
+
+test("workspace API validates payload and listEvents sends workspace_id", async () => {
+  assert.equal(isWorkspace({ id: 2, name: "Работа", is_default: false }), true);
+  assert.equal(isWorkspace({ id: 2, name: "Работа" }), false);
+  let listUrl = "";
+  globalThis.fetch = async url => { listUrl = String(url); return Response.json({ events: [event()] }); };
+  await listEvents(undefined, 4);
+  assert.match(listUrl, /\/api\/events\?workspace_id=4/);
+  globalThis.fetch = async () => Response.json({ workspaces: [{ id: 1, name: "Общее пространство", is_default: true }] });
+  const spaces = await listWorkspaces();
+  assert.equal(spaces[0].name, "Общее пространство");
 });

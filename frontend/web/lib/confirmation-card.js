@@ -19,10 +19,10 @@ export function confirmationCard(proposal) {
     meta.append(icon(data.event_type === "meeting" ? "calendar" : data.event_type === "reminder" ? "bell" : "check"), el("span", "", label));
     card.append(meta);
   }
-  if (typeof data.date === "string") card.append(el("p", "confirmation-card__meta", formatDate(data.date) + (typeof data.time === "string" ? " · " + data.time.slice(0, 5) : "")));
+  if (typeof data.date === "string") card.append(el("p", "confirmation-card__meta", formatDate(data.date) + (typeof data.time === "string" ? "  " + data.time.slice(0, 5) : "")));
   else if (data.intent === "create") card.append(el("p", "confirmation-card__meta", "Без даты"));
   if (typeof data.duration_min === "number" && data.event_type === "meeting") card.append(el("p", "confirmation-card__meta", `Длительность: ${data.duration_min} мин`));
-  if (data.intent === "create") card.append(el("p", "muted", "Запись ещё не создана"));
+  if (data.intent === "create") card.append(el("p", "muted confirmation-card__creation-note", "Запись ещё не создана"));
   card.append(el("div", "confirmation-card__actions"));
   return card;
 }
@@ -32,4 +32,6 @@ export function resolveConfirmation(card, kind) {
   card.dataset.state = kind === "created" || kind === "deleted" || kind === "updated" ? "confirmed" : kind === "cancelled" ? "declined" : "replaced";
   const status = card.querySelector(".confirmation-card__status");
   if (status) status.textContent = card.dataset.state === "confirmed" ? "Подтверждено" : card.dataset.state === "declined" ? "Отклонено" : "Предложение больше не активно";
+  const note = card.querySelector(".confirmation-card__creation-note");
+  if (note && kind === "created") note.textContent = "Запись создана";
 }

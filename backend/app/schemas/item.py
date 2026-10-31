@@ -31,6 +31,7 @@ class ItemCreate(BaseModel):
     due_on: date | None = None
     due_at: datetime | None = None
     remind_at: datetime | None = None
+    workspace_id: int | None = Field(default=None, ge=1)
 
     @field_validator("title")
     @classmethod
@@ -116,6 +117,7 @@ class ItemRead(BaseModel):
     due_on: date | None
     due_at: datetime | None
     remind_at: datetime | None
+    workspace_id: int
     created_at: datetime
     updated_at: datetime
 
@@ -143,3 +145,4 @@ class ItemQuery(BaseModel):
     end: datetime | None = None
     limit: int = Field(default=50, ge=1, le=200)
     offset: int = Field(default=0, ge=0)
+    workspace_id: int | None = Field(default=None, ge=1)

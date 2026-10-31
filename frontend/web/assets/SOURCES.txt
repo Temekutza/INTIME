@@ -1,0 +1,5 @@
+IBM Plex: https://github.com/IBM/plex/tree/71f558992315a12ca1f06a2215d57962a1992162
+Lucide: https://github.com/lucide-icons/lucide/tree/a630cec77eac6568b989e87e4947a8bfe45caacd
+Fonts: complete WOFF2 with Cyrillic; Sans 400/500/600, Serif 400/500.
+Logo: original user-provided PNG, copied unchanged; transparent background.
+Inter: https://github.com/rsms/inter/tree/353b61b9f4430d5f420d56605a6e7993e0941470 (current UI font, local variable WOFF2)

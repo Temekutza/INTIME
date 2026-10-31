@@ -1,11 +1,12 @@
 // @ts-check
 import { requestJson, isEvent } from "./api.js";
+import { workspaceStore } from "./workspace.js";
 import { colorStore } from "./colors.js";
 import { ColorPicker } from "./color-picker.js";
-import { button, el } from "./ui.js";
-import { validatePatch } from "./model.js";
+import { button, el, icon } from "./ui.js";
+import { fieldErrors } from "./model.js";
 import { hasProfanity } from "./profanity.js";
-import { enhanceFields } from "./fields.js";
+import { enhanceFields, showFieldErrors } from "./fields.js";
 import { confirmDiscard } from "./confirm-dialog.js";
 
 /** @typedef {import('./types').EventType} EventType */
@@ -49,9 +50,9 @@ export class CreateEventDialog {
     let lastPayload = null;
     const heading = el("div", "section-heading");
     const title = el("h2", "", "Новая запись"); title.id = "create-title";
-    const close = button("×", "icon-btn", () => this.close()); close.setAttribute("aria-label", "Закрыть форму создания");
+    const close = button("", "icon-btn", () => this.close()); close.append(icon("close")); close.setAttribute("aria-label", "Закрыть форму создания");
     heading.append(title, close);
-    const form = el("form", "create-form");
+    const form = el("form", "create-form"); form.noValidate = true;
     const kind = el("select"); kind.id = "create-type";
     kind.append(new Option("Задача", "task"), new Option("Встреча", "meeting"), new Option("Напоминание", "reminder")); kind.value = initialType;
     const name = el("input"); name.id = "create-name"; name.required = true; name.maxLength = 300; name.autocomplete = "off"; name.placeholder = "Что нужно сделать?";
@@ -60,7 +61,21 @@ export class CreateEventDialog {
     const duration = el("input"); duration.id = "create-duration"; duration.type = "number"; duration.min = "1"; duration.max = "1440"; duration.value = "60";
     const deadline = el("input"); deadline.id = "create-deadline"; deadline.type = "checkbox";
     const field = (/** @type {string} */ label, /** @type {HTMLInputElement | HTMLSelectElement} */ node) => {
-      const wrapper = el("label", "form-field", label); wrapper.htmlFor = node.id; wrapper.append(node); return wrapper;
+      const wrapper = el("label", "form-field"); wrapper.htmlFor = node.id;
+      const caption = el("span", "field-caption", label); caption.dataset.label = label;
+      wrapper.append(caption, node); return wrapper;
+    };
+    const setRequired = (/** @type {HTMLInputElement} */ node, /** @type {boolean} */ on) => {
+      node.required = on;
+      node.setAttribute("aria-required", on ? "true" : "false");
+      const caption = node.closest(".form-field")?.querySelector(".field-caption");
+      if (!(caption instanceof HTMLElement)) return;
+      caption.querySelector(".req")?.remove();
+      if (on) {
+        const mark = el("abbr", "req", "*");
+        mark.title = "Обязательное поле";
+        caption.append(mark);
+      }
     };
     const dates = el("div", "form-columns"); dates.append(field("Дата", date), field("Время", time));
     const durationField = field("Длительность, минут", duration);
@@ -76,8 +91,9 @@ export class CreateEventDialog {
     const confirm = button("Подтвердить создание", "btn btn-primary", () => { void send(true); });
     const cancel = button("Отменить подтверждение", "btn btn-quiet", () => { confirmation.hidden = true; message.textContent = "Измените поля и отправьте форму заново."; });
     confirmation.append(confirm, cancel);
+    const hint = el("p", "muted", "Для задачи достаточно названия. Дата и время необязательны.");
     form.append(field("Тип записи", kind), field("Название", name), dates, durationField, deadlineField, colorField,
-      el("p", "muted", "Дата необязательна для задачи. Время — локальное время сервера."), message, confirmation, submit);
+      hint, message, confirmation, submit);
     /** @returns {EventType} */
     function currentType() { return kind.value === "meeting" ? "meeting" : kind.value === "reminder" ? "reminder" : "task"; }
     const refreshType = () => {
@@ -85,7 +101,12 @@ export class CreateEventDialog {
       title.textContent = task ? "Новая задача" : type === "meeting" ? "Новая встреча" : "Новое напоминание";
       submit.textContent = task ? "Создать задачу" : type === "meeting" ? "Создать встречу" : "Создать напоминание";
       durationField.hidden = type !== "meeting"; deadlineField.hidden = !task;
-      date.required = !task; time.required = !task;
+      setRequired(name, true); setRequired(date, !task); setRequired(time, !task); setRequired(duration, type === "meeting");
+      hint.textContent = task
+        ? "Для задачи достаточно названия. Дата и время необязательны."
+        : type === "meeting"
+          ? "Для встречи нужны название, дата, время и длительность."
+          : "Для напоминания нужны название, дата и время.";
       this.picker?.refresh();
       enhanceFields(form);
     };
@@ -94,6 +115,11 @@ export class CreateEventDialog {
       this.dirty = true;
       if (event.target instanceof Element && event.target.closest(".color-picker")) return;
       confirmation.hidden = true; message.textContent = "";
+      if (event.target instanceof HTMLElement) {
+        event.target.setAttribute("aria-invalid", "false");
+        event.target.closest(".form-field")?.classList.remove("is-invalid");
+        event.target.closest(".field-date")?.classList.remove("is-invalid");
+      }
     });
     const setBusy = (/** @type {boolean} */ value) => {
       this.busy = value;
@@ -105,18 +131,22 @@ export class CreateEventDialog {
       if (this.busy) return;
       try {
         const type = currentType();
-        // The same validation as the editor, without manufacturing a domain object.
-        if (hasProfanity(name.value)) throw new Error("Не принимаем ненормативную лексику в названии.");
-        validatePatch({ type }, name.value, date.value, time.value, "planned");
+        const errors = fieldErrors({ type }, name.value, date.value, time.value, "planned", {
+          duration: type === "meeting" ? duration.value : undefined,
+        });
+        if (hasProfanity(name.value)) errors.title = "Не принимаем ненормативную лексику в названии.";
+        showFieldErrors(form, errors);
+        const firstError = Object.values(errors)[0];
+        if (firstError) throw new Error(firstError);
         const payload = { type, title: name.value.trim(), date: date.value || null, time: time.value || null,
-          duration_min: type === "meeting" ? Number(duration.value) : null, is_deadline: type === "task" && deadline.checked, color };
-        if (type === "meeting" && (!Number.isInteger(payload.duration_min) || Number(payload.duration_min) < 1 || Number(payload.duration_min) > 1440)) throw new Error("Укажите длительность от 1 до 1440 минут.");
+          duration_min: type === "meeting" ? Number(duration.value) : null, is_deadline: type === "task" && deadline.checked, color,
+          ...(workspaceStore.currentId === null ? {} : { workspace_id: workspaceStore.currentId }) };
         const serialized = JSON.stringify(payload);
         const fingerprint = (confirmed ? "confirm:" : "create:") + serialized;
         if (lastPayload !== fingerprint) { requestId = crypto.randomUUID(); lastPayload = fingerprint; }
         setBusy(true); message.textContent = "Сохранение…"; message.classList.remove("is-danger");
         const result = confirmed
-          ? await requestJson("/api/message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: session, request_id: requestId, text: "Да", new_event_color: color }) })
+          ? await requestJson("/api/message", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: session, request_id: requestId, text: "Да", new_event_color: color, ...(workspaceStore.currentId === null ? {} : { workspace_id: workspaceStore.currentId }) }) })
           : await requestJson("/api/events", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ session_id: session, request_id: requestId, ...payload }) });
         if (!isReply(result)) throw new Error("Сервер вернул некорректный ответ создания.");
         message.textContent = result.text;

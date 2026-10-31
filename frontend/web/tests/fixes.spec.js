@@ -2,9 +2,8 @@ import { test, expect } from "@playwright/test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { USE_DB_MOCKS } from "./db-mocks.js";
 
-const artifacts = process.env.INTIME_TEST_ARTIFACTS || path.join(os.tmpdir(), "intime-frontend-qa");
+const artifacts = process.env.AIVRITM_TEST_ARTIFACTS || path.join(os.tmpdir(), "aivritm-frontend-qa");
 const sizes = [[1280, 800], [1343, 868], [1366, 768], [1440, 900], [1536, 985], [1920, 1080]];
 let baseline;
 test.beforeAll(async ({ request }) => { baseline = (await (await request.get("/api/events")).json()).events; });
@@ -22,7 +21,7 @@ test.afterEach(async ({ request }) => {
 async function loaded(page) {
   await page.goto("/");
   await expect(page.locator("#records")).toHaveAttribute("aria-busy", "false");
-  await expect(page.getByRole("button", { name: "Цвет новой записи", exact: true })).toBeEnabled();
+  await page.waitForFunction(async () => (await import("/static/lib/colors.js")).colorStore.loaded);
 }
 async function shot(page, name) {
   await fs.mkdir(artifacts, { recursive: true });
@@ -126,7 +125,6 @@ test("color changes visibly affect task background and persist after reload", as
 });
 
 test("a newly created task is revealed after a thousand archived records", async ({ page }) => {
-  test.skip(!USE_DB_MOCKS, "Мок набора записей из БД выключен");
   const template = baseline.find(event => event.type === "task" && event.status === "planned");
   const archive = Array.from({ length: 1000 }, (_, index) => ({ ...template, id: 3000 + index, title: `Архивная задача ${index}`, date: "2024-01-07", time: "14:45" }));
   await page.route("**/api/events", route => route.request().method() === "GET" ? route.fulfill({ json: { events: archive } }) : route.continue());
@@ -135,7 +133,7 @@ test("a newly created task is revealed after a thousand archived records", async
   await page.locator("#create-dialog").getByRole("button", { name: "Создать задачу", exact: true }).click();
   await expect(page.locator("#edit-title")).toHaveValue("Новая задача после большого архива");
   await expect(page.locator("#records .task-row.is-selected")).toBeInViewport();
-  await geometry(page); await page.locator("#day-close").click(); await geometry(page);
+  await geometry(page); await page.locator("#day-open").click(); await geometry(page);
   await shot(page, "thousand-records-new-task");
 });
 
@@ -152,12 +150,12 @@ for (const [width, height] of sizes) {
     expect(fonts.task).toBeGreaterThanOrEqual(14); expect(fonts.meta).toBeGreaterThanOrEqual(12);
     expect(fonts.radius).toBeGreaterThanOrEqual(10); expect(fonts.radius).toBeLessThanOrEqual(14);
     const openWidth = (await page.locator("#workspace-main").boundingBox()).width;
-    await page.locator("#day-close").click(); await expect(page.locator("#day-panel")).toBeHidden(); await geometry(page);
+    await page.locator("#day-open").click(); await expect(page.locator("#day-panel")).toBeHidden(); await geometry(page);
     expect((await page.locator("#workspace-main").boundingBox()).width).toBeGreaterThan(openWidth + 200);
-    await page.locator("#assistant-close").click(); await geometry(page); await shot(page, `both-panels-hidden-${width}x${height}`);
+    await page.locator("#assistant-open").click(); await geometry(page); await shot(page, `both-panels-hidden-${width}x${height}`);
     await page.locator("#day-open").click(); await geometry(page);
     await page.locator("#assistant-open").click(); await geometry(page);
-    await page.locator("#day-close").click(); await page.reload(); await expect(page.locator("#day-panel")).toBeHidden();
+    await page.locator("#day-open").click(); await page.reload(); await expect(page.locator("#day-panel")).toBeHidden();
     await page.locator("#day-open").click(); await page.locator("#add-button").click();
     await expect(page.locator("#create-dialog")).toBeVisible();
     await page.locator("#create-dialog").getByRole("button", { name: "Создать задачу", exact: true }).scrollIntoViewIfNeeded();
